@@ -3,7 +3,11 @@ package com.finapp.daily.data
 import android.content.Context
 
 /**
- * 刷新编排层。指标三级降级，资讯走精确过滤 + 时间窗，公告按事项分类筛。
+ * 刷新编排层。
+ *
+ * 资讯口径（按用户要求）：**只收彭博社相关的内容**（中文站转载时一般标「（彭博）」）。
+ * 实测东财和新浪都不带这个标记，只有华尔街见闻 7x24 会带，所以彭博内容主要来自那里。
+ * 如果一段时间内一条都没有，则退回到「四主题过滤」并在界面提示，避免整页空白。
  */
 class Repo(context: Context) {
 
@@ -21,33 +25,47 @@ class Repo(context: Context) {
             problems.add("云端指标不可用（${e.message}）")
         }
 
-        // ---------------- 2. 境内直连补缺 ----------------
         if (listOf("DXY", "WTI", "BRENT").any { !indicators.containsKey(it) }) {
             runCatching { Sources.fetchDomesticQuotes() }.getOrNull()
                 ?.forEach { indicators.putIfAbsent(it.code, it) }
         }
 
-        // ---------------- 3. 资讯：多页 + 时间窗 + 精确过滤 ----------------
+        // ---------------- 2. 资讯：彭博优先 ----------------
         val since = Sources.sinceLabel(Config.NEWS_DAYS)
         val raw = mutableListOf<Article>()
 
-        runCatching { raw += Sources.fetchEastmoneyNews() }
-            .onFailure { problems.add("东财资讯失败（${it.message}）") }
         runCatching { raw += Sources.fetchWscn(since) }
             .onFailure { problems.add("见闻快讯失败（${it.message}）") }
+        runCatching { raw += Sources.fetchEastmoneyNews() }
+            .onFailure { problems.add("东财资讯失败（${it.message}）") }
 
-        val filtered = raw
+        val pool = raw
             .filter { it.url.isNotBlank() && it.title.isNotBlank() }
             .filter { it.publishedAt.isEmpty() || it.publishedAt >= since }
             .distinctBy { it.url }
-            .mapNotNull { article ->
-                val topics = Keywords.classify(article.title, article.summary)
-                if (topics.isEmpty()) null
-                else article.copy(topics = topics.joinToString(","))
-            }
-            .sortedByDescending { it.publishedAt }
 
-        // ---------------- 4. 公告：东财分类筛，失败退回巨潮 ----------------
+        val bloomberg = pool.filter {
+            Keywords.isBloomberg(it.title + " " + it.summary)
+        }
+
+        val articles: List<Article>
+        if (bloomberg.isNotEmpty()) {
+            // 彭博口径：全部保留，只打主题标签（不因主题不匹配而丢弃）
+            articles = bloomberg
+                .map { it.copy(topics = Keywords.classify(it.title, it.summary).joinToString(",")) }
+                .sortedByDescending { it.publishedAt }
+        } else {
+            // 兜底：3 天内没有彭博内容，退回四主题过滤，至少不为空
+            articles = pool
+                .mapNotNull { a ->
+                    val topics = Keywords.classify(a.title, a.summary)
+                    if (topics.isEmpty()) null else a.copy(topics = topics.joinToString(","))
+                }
+                .sortedByDescending { it.publishedAt }
+            problems.add("近 ${Config.NEWS_DAYS} 天没有彭博社相关内容，暂显示四主题资讯")
+        }
+
+        // ---------------- 3. 公告：东财分类筛，失败退回巨潮 ----------------
         var announcements: List<Announcement> = emptyList()
         try {
             announcements = Sources.fetchEastmoneyAnnouncements()
@@ -64,19 +82,18 @@ class Repo(context: Context) {
             }
         }
 
-        // ---------------- 5. 指标仍缺 → 资讯提取 ----------------
+        // ---------------- 4. 指标仍缺 → 资讯提取 ----------------
         val missing = EXPECTED_CODES.filter { !indicators.containsKey(it) }
-        if (missing.isNotEmpty() && filtered.isNotEmpty()) {
-            extractFromNews(filtered, missing).forEach { indicators.putIfAbsent(it.code, it) }
+        if (missing.isNotEmpty() && articles.isNotEmpty()) {
+            extractFromNews(articles, missing).forEach { indicators.putIfAbsent(it.code, it) }
         }
 
-        // ---------------- 6. 落库 ----------------
+        // ---------------- 5. 落库 ----------------
         val indicatorList = indicators.values.toList()
         db.upsertIndicators(indicatorList)
-        db.insertArticles(filtered)
+        db.insertArticles(articles)
         db.insertAnnouncements(announcements)
 
-        // ---------------- 7. 综述 ----------------
         val counts = db.counts()
         db.saveDigest(
             Sources.today(),
@@ -86,7 +103,7 @@ class Repo(context: Context) {
 
         return RefreshResult(
             indicatorCount = indicatorList.size,
-            articleCount = filtered.size,
+            articleCount = articles.size,
             announcementCount = announcements.size,
             error = problems.takeIf { it.isNotEmpty() }?.joinToString("；")
         )
