@@ -4,6 +4,10 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.content.Context
 import android.content.ContentValues
+import android.annotation.SuppressLint
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 本地库。故意不用 Room —— 省掉 KSP 注解处理器，构建链更稳，
@@ -313,4 +317,33 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         readableDatabase.rawQuery("SELECT MAX(updated_at) FROM indicator", null).use { c ->
             if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
         }
+
+    // ------------------------------------------------------------- 手动清理
+
+    @SuppressLint("SimpleDateFormat")
+    private fun labelDaysAgo(days: Int): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA)
+            .format(Date(System.currentTimeMillis() - days * 24L * 3600L * 1000L))
+
+    /** 清掉 N 天之前的资讯和公告，返回删除条数。 */
+    fun clearOlderThan(days: Int): Int {
+        val label = labelDaysAgo(days)
+        val day = label.take(10)
+        val db = writableDatabase
+        var n = db.delete("article", "published_at < ?", arrayOf(label))
+        n += db.delete("announcement", "published_at < ?", arrayOf(label))
+        db.delete("digest", "day < ?", arrayOf(day))
+        db.delete("indicator_history", "as_of < ?", arrayOf(day))
+        return n
+    }
+
+    /** 清空全部资讯和公告（指标保留）。 */
+    fun clearAllContent(): Int {
+        val db = writableDatabase
+        var n = db.delete("article", null, null)
+        n += db.delete("announcement", null, null)
+        db.delete("digest", null, null)
+        db.delete("indicator_history", null, null)
+        return n
+    }
 }
