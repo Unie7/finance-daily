@@ -55,7 +55,10 @@ class Repo(context: Context) {
             if (Keywords.isBloomberg(article.title + " " + article.summary)) {
                 topics.add(0, PSEUDO_BLOOMBERG)
             }
-            if (topics.isEmpty()) null else article.copy(topics = topics.joinToString(","))
+            if (topics.isEmpty()) null else article.copy(
+                topics = topics.joinToString(","),
+                score = Keywords.relevance(article.title, article.summary)
+            )
         }
             .sortedByDescending { it.publishedAt }
             .take(MAX_ARTICLES)
@@ -113,7 +116,8 @@ class Repo(context: Context) {
 
     fun indicators(): List<Indicator> = db.loadIndicators()
 
-    fun articles(topic: String? = null): List<Article> = db.loadArticles(topic)
+    fun articles(topic: String? = null, byRelevance: Boolean = false): List<Article> =
+        db.loadArticles(topic, byRelevance = byRelevance)
 
     fun announcements(): List<Announcement> = db.loadAnnouncements()
 
