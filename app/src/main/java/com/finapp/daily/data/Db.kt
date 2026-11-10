@@ -17,7 +17,7 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
 
     companion object {
         private const val NAME = "finance.db"
-        private const val VERSION = 3
+        private const val VERSION = 4
         const val RETENTION_DAYS = 90
     }
 
@@ -57,6 +57,8 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                 source TEXT,
                 topics TEXT,
                 score INTEGER NOT NULL DEFAULT 0,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                fav_at INTEGER,
                 published_at TEXT,
                 fetched_at INTEGER
             )
@@ -72,6 +74,8 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                 name TEXT,
                 title TEXT NOT NULL,
                 category TEXT,
+                favorite INTEGER NOT NULL DEFAULT 0,
+                fav_at INTEGER,
                 published_at TEXT,
                 fetched_at INTEGER
             )
@@ -89,10 +93,24 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         )
     }
 
+    /**
+     * 增量迁移：v4 只在 article / announcement 上加两列，不动原有数据，
+     * 用户已经抓到的资讯和公告都保得住。
+     * v3 之前结构变动大，直接重建。
+     */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        listOf("indicator", "indicator_history", "article", "announcement", "digest")
-            .forEach { db.execSQL("DROP TABLE IF EXISTS $it") }
-        onCreate(db)
+        if (oldVersion < 3) {
+            listOf("indicator", "indicator_history", "article", "announcement", "digest")
+                .forEach { db.execSQL("DROP TABLE IF EXISTS $it") }
+            onCreate(db)
+            return
+        }
+        if (oldVersion < 4) {
+            db.execSQL("ALTER TABLE article ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE article ADD COLUMN fav_at INTEGER")
+            db.execSQL("ALTER TABLE announcement ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE announcement ADD COLUMN fav_at INTEGER")
+        }
     }
 
     // ------------------------------------------------------------- 指标
@@ -220,8 +238,8 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         val order = if (byRelevance) "score DESC, published_at DESC" else "published_at DESC"
         val out = mutableListOf<Article>()
         readableDatabase.rawQuery(
-            "SELECT id,title,summary,source,url,published_at,topics,score FROM article $where " +
-                "ORDER BY $order LIMIT ?",
+            "SELECT id,title,summary,source,url,published_at,topics,score,favorite,fav_at " +
+                "FROM article $where ORDER BY $order LIMIT ?",
             (args + limit.toString()).toTypedArray()
         ).use { c ->
             while (c.moveToNext()) {
@@ -234,7 +252,9 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                         url = c.getString(4),
                         publishedAt = c.getString(5) ?: "",
                         topics = c.getString(6) ?: "",
-                        score = c.getInt(7)
+                        score = c.getInt(7),
+                        favorite = c.getInt(8) == 1,
+                        favoriteAt = if (c.isNull(9)) 0L else c.getLong(9)
                     )
                 )
             }
@@ -288,8 +308,8 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         args.add(limit.toString())
         val out = mutableListOf<Announcement>()
         readableDatabase.rawQuery(
-            "SELECT id,code,name,title,category,url,published_at FROM announcement $where " +
-                "ORDER BY published_at DESC LIMIT ?",
+            "SELECT id,code,name,title,category,url,published_at,favorite,fav_at " +
+                "FROM announcement $where ORDER BY published_at DESC LIMIT ?",
             args.toTypedArray()
         ).use { c ->
             while (c.moveToNext()) {
@@ -301,7 +321,9 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                         title = c.getString(3),
                         category = c.getString(4) ?: "",
                         url = c.getString(5),
-                        publishedAt = c.getString(6) ?: ""
+                        publishedAt = c.getString(6) ?: "",
+                        favorite = c.getInt(7) == 1,
+                        favoriteAt = if (c.isNull(8)) 0L else c.getLong(8)
                     )
                 )
             }
@@ -361,6 +383,85 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         return out
     }
 
+    // ------------------------------------------------------------- 收藏
+
+    fun setArticleFavorite(url: String, favorite: Boolean) {
+        val v = ContentValues().apply {
+            put("favorite", if (favorite) 1 else 0)
+            if (favorite) put("fav_at", System.currentTimeMillis()) else putNull("fav_at")
+        }
+        writableDatabase.update("article", v, "url = ?", arrayOf(url))
+    }
+
+    fun setAnnouncementFavorite(url: String, favorite: Boolean) {
+        val v = ContentValues().apply {
+            put("favorite", if (favorite) 1 else 0)
+            if (favorite) put("fav_at", System.currentTimeMillis()) else putNull("fav_at")
+        }
+        writableDatabase.update("announcement", v, "url = ?", arrayOf(url))
+    }
+
+    fun loadFavoriteArticles(limit: Int = 300): List<Article> {
+        val out = mutableListOf<Article>()
+        readableDatabase.rawQuery(
+            "SELECT id,title,summary,source,url,published_at,topics,score,favorite,fav_at " +
+                "FROM article WHERE favorite = 1 ORDER BY fav_at DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    Article(
+                        id = c.getLong(0),
+                        title = c.getString(1),
+                        summary = c.getString(2) ?: "",
+                        source = c.getString(3) ?: "",
+                        url = c.getString(4),
+                        publishedAt = c.getString(5) ?: "",
+                        topics = c.getString(6) ?: "",
+                        score = c.getInt(7),
+                        favorite = true,
+                        favoriteAt = if (c.isNull(9)) 0L else c.getLong(9)
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    fun loadFavoriteAnnouncements(limit: Int = 300): List<Announcement> {
+        val out = mutableListOf<Announcement>()
+        readableDatabase.rawQuery(
+            "SELECT id,code,name,title,category,url,published_at,favorite,fav_at " +
+                "FROM announcement WHERE favorite = 1 ORDER BY fav_at DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    Announcement(
+                        id = c.getLong(0),
+                        code = c.getString(1) ?: "",
+                        name = c.getString(2) ?: "",
+                        title = c.getString(3),
+                        category = c.getString(4) ?: "",
+                        url = c.getString(5),
+                        publishedAt = c.getString(6) ?: "",
+                        favorite = true,
+                        favoriteAt = if (c.isNull(8)) 0L else c.getLong(8)
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    fun favoriteCounts(): Pair<Int, Int> {
+        fun count(table: String): Int =
+            readableDatabase.rawQuery(
+                "SELECT COUNT(*) FROM $table WHERE favorite = 1", null
+            ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+        return count("article") to count("announcement")
+    }
+
     fun counts(): Triple<Int, Int, Int> {
         fun count(table: String): Int =
             readableDatabase.rawQuery("SELECT COUNT(*) FROM $table", null).use { c ->
@@ -383,22 +484,27 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
             .format(Date(System.currentTimeMillis() - days * 24L * 3600L * 1000L))
 
     /** 清掉 N 天之前的资讯和公告，返回删除条数。 */
-    fun clearOlderThan(days: Int): Int {
+    /**
+     * @param keepFavorites true 则保留已收藏的条目（默认行为，避免误删）
+     */
+    fun clearOlderThan(days: Int, keepFavorites: Boolean = true): Int {
         val label = labelDaysAgo(days)
         val day = label.take(10)
         val db = writableDatabase
-        var n = db.delete("article", "published_at < ?", arrayOf(label))
-        n += db.delete("announcement", "published_at < ?", arrayOf(label))
+        val keep = if (keepFavorites) " AND favorite = 0" else ""
+        var n = db.delete("article", "published_at < ?$keep", arrayOf(label))
+        n += db.delete("announcement", "published_at < ?$keep", arrayOf(label))
         db.delete("digest", "day < ?", arrayOf(day))
         db.delete("indicator_history", "as_of < ?", arrayOf(day))
         return n
     }
 
-    /** 清空全部资讯和公告（指标保留）。 */
-    fun clearAllContent(): Int {
+    /** 清空资讯和公告（指标保留）。keepFavorites 为 true 时只清未收藏的。 */
+    fun clearAllContent(keepFavorites: Boolean = true): Int {
         val db = writableDatabase
-        var n = db.delete("article", null, null)
-        n += db.delete("announcement", null, null)
+        val where = if (keepFavorites) "favorite = 0" else null
+        var n = db.delete("article", where, null)
+        n += db.delete("announcement", where, null)
         db.delete("digest", null, null)
         db.delete("indicator_history", null, null)
         return n
