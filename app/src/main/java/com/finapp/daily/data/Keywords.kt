@@ -66,6 +66,20 @@ object Keywords {
         }
     }
 
+// ------------------------------------------------------------------ 彭博
+
+    /**
+     * 只保留彭博社相关的内容。中文财经站转载彭博时，通常在正文末尾标注「（彭博）」
+     * 或在正文里写「据彭博社报道」。实测东财和见闻 7x24 里只有见闻会带这个标记。
+     */
+    private val BLOOMBERG_WORDS = listOf("彭博", "bloomberg", "布隆伯格")
+
+    fun isBloomberg(text: String): Boolean {
+        if (text.isBlank()) return false
+        val lower = text.lowercase()
+        return BLOOMBERG_WORDS.any { lower.contains(it) }
+    }
+
     // ------------------------------------------------------------------ 公告
 
     /**
