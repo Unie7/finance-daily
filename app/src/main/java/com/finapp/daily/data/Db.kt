@@ -230,6 +230,47 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         return changed
     }
 
+    /**
+     * 全量读取资讯（不限时间、不限主题），用于按当前规则重算标签。
+     *
+     * 为什么需要它：只重算"本轮抓到的"是不够的——
+     * 一条以前被打上标签、本轮又没被抓到的老条目，会永远停留在旧标签上，
+     * 而清理逻辑只删 topics 为空的，所以它永远删不掉。必须全量重算。
+     */
+    fun loadAllArticlesForReclassify(): List<Article> {
+        val out = mutableListOf<Article>()
+        readableDatabase.rawQuery(
+            "SELECT id,title,summary,source,url,published_at,topics,score,favorite,fav_at FROM article",
+            null
+        ).use { c ->
+            while (c.moveToNext()) {
+                out.add(
+                    Article(
+                        id = c.getLong(0),
+                        title = c.getString(1),
+                        summary = c.getString(2) ?: "",
+                        source = c.getString(3) ?: "",
+                        url = c.getString(4),
+                        publishedAt = c.getString(5) ?: "",
+                        topics = c.getString(6) ?: "",
+                        score = c.getInt(7),
+                        favorite = c.getInt(8) == 1,
+                        favoriteAt = if (c.isNull(9)) 0L else c.getLong(9)
+                    )
+                )
+            }
+        }
+        return out
+    }
+
+    fun updateArticleTopics(url: String, topics: String, score: Int) {
+        val v = ContentValues().apply {
+            put("topics", topics)
+            put("score", score)
+        }
+        writableDatabase.update("article", v, "url = ?", arrayOf(url))
+    }
+
     /** 清掉历史残留：没收藏且当前规则下不命中任何主题的行。 */
     fun purgeNoTopicArticles(): Int =
         writableDatabase.delete(
