@@ -205,16 +205,24 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
     fun loadArticles(
         topic: String? = null,
         limit: Int = 300,
-        byRelevance: Boolean = false
+        byRelevance: Boolean = false,
+        minScore: Int = 0
     ): List<Article> {
-        val where = if (topic.isNullOrEmpty() || topic == "全部") "" else "WHERE topics LIKE ?"
-        val args = if (where.isEmpty()) null else arrayOf("%$topic%")
+        val conds = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        if (!topic.isNullOrEmpty() && topic != "全部") {
+            conds.add("topics LIKE ?"); args.add("%$topic%")
+        }
+        if (minScore > 0) {
+            conds.add("score >= ?"); args.add(minScore.toString())
+        }
+        val where = if (conds.isEmpty()) "" else "WHERE " + conds.joinToString(" AND ")
         val order = if (byRelevance) "score DESC, published_at DESC" else "published_at DESC"
         val out = mutableListOf<Article>()
         readableDatabase.rawQuery(
             "SELECT id,title,summary,source,url,published_at,topics,score FROM article $where " +
                 "ORDER BY $order LIMIT ?",
-            (args ?: emptyArray()) + limit.toString()
+            (args + limit.toString()).toTypedArray()
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
