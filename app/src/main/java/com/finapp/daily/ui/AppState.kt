@@ -60,19 +60,50 @@ class AppState(private val context: Context) {
         loadArticles()
     }
 
+    // ---------------- 公告筛选 ----------------
+    var annCategory by mutableStateOf<String?>(null)
+        private set
+    var annCompany by mutableStateOf<Pair<String, String>?>(null)
+        private set
+    var annCategories by mutableStateOf<List<String>>(emptyList())
+        private set
+    var annCompanies by mutableStateOf<List<Pair<String, String>>>(emptyList())
+        private set
+
+    fun filterByCategory(category: String?) {
+        annCategory = category
+        loadAnnouncements()
+    }
+
+    fun filterByCompany(company: Pair<String, String>?) {
+        annCompany = company
+        loadAnnouncements()
+    }
+
+    private fun loadAnnouncements() {
+        executor.execute {
+            val ann = repo.announcements(annCategory, annCompany?.first)
+            main.post { announcements = ann }
+        }
+    }
+
     fun loadFromDb() {
         executor.execute {
             val ind = repo.indicators()
             val art = repo.articles(topicFilter, sortByRelevance)
-            val ann = repo.announcements()
+            val ann = repo.announcements(annCategory, annCompany?.first)
             val dig = repo.digest()
             val upd = repo.lastUpdated()
+            val cats = repo.announcementCategories()
+            val comps = repo.announcementCompanies()
             main.post {
                 indicators = ind
                 articles = art
                 announcements = ann
                 digest = dig
                 lastUpdated = upd
+                annCategories = cats
+                annCompanies = comps
             }
         }
     }
@@ -111,15 +142,19 @@ class AppState(private val context: Context) {
             }
             val ind = repo.indicators()
             val art = repo.articles(topicFilter, sortByRelevance)
-            val ann = repo.announcements()
+            val ann = repo.announcements(annCategory, annCompany?.first)
             val dig = repo.digest()
             val upd = repo.lastUpdated()
+            val cats = repo.announcementCategories()
+            val comps = repo.announcementCompanies()
             main.post {
                 indicators = ind
                 articles = art
                 announcements = ann
                 digest = dig
                 lastUpdated = upd
+                annCategories = cats
+                annCompanies = comps
                 refreshing = false
                 errorDetail = result.error
                 statusText = when {
@@ -138,7 +173,7 @@ class AppState(private val context: Context) {
         executor.execute {
             val removed = repo.clearOlderThan(days)
             val art = repo.articles(topicFilter, sortByRelevance)
-            val ann = repo.announcements()
+            val ann = repo.announcements(annCategory, annCompany?.first)
             main.post {
                 articles = art
                 announcements = ann
@@ -152,7 +187,7 @@ class AppState(private val context: Context) {
         executor.execute {
             val removed = repo.clearAllContent()
             val art = repo.articles(topicFilter, sortByRelevance)
-            val ann = repo.announcements()
+            val ann = repo.announcements(annCategory, annCompany?.first)
             main.post {
                 articles = art
                 announcements = ann
