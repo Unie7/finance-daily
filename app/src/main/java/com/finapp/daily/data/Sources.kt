@@ -56,7 +56,7 @@ object Sources {
         for (url in urls) {
             val host = url.substringAfter("//").substringBefore("/")
             try {
-                val list = parseCloudIndicators(Http.get(url, timeoutMs = 12000))
+                val list = parseCloudIndicators(Http.get(url, timeoutMs = Config.CLOUD_TIMEOUT_MS))
                 if (list.isNotEmpty()) return list
                 failures.add("$host 返回空")
             } catch (e: Exception) {
