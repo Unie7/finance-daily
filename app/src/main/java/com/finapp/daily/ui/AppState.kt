@@ -68,13 +68,13 @@ class AppState(private val context: Context) {
     }
 
     /** 相关度门槛：低于这个分数的资讯不显示。用户可以自己调。 */
-    var minRelevance by mutableStateOf(prefs.getInt("min_relevance", 0))
+    var minRelevance by mutableStateOf(prefs.getInt("min_relevance_v2", 15))
         private set
 
     fun applyMinRelevance(value: Int) {
         val v = value.coerceIn(0, 50)
         minRelevance = v
-        prefs.edit().putInt("min_relevance", v).apply()
+        prefs.edit().putInt("min_relevance_v2", v).apply()
         loadArticles()
     }
 
