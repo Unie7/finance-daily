@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,6 +32,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -150,8 +153,13 @@ private fun OverviewScreen(state: AppState) {
             item { EmptyHint("还没有行情数据，点右上角「刷新」试一下") }
         } else {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    cards.forEach { ind -> IndicatorCard(ind, Modifier.weight(1f)) }
+                Row(
+                    Modifier.height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    cards.forEach { ind ->
+                        IndicatorCard(ind, Modifier.weight(1f).fillMaxHeight())
+                    }
                 }
             }
         }
@@ -196,16 +204,14 @@ private fun IndicatorCard(ind: Indicator, modifier: Modifier = Modifier) {
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(ind.value, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                if (ind.unit.isNotEmpty()) {
-                    Text(
-                        ind.unit,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 2.dp, bottom = 2.dp)
-                    )
-                }
+            // 单位放在数字下面：三个方框等宽，竖排单位会被挤变形
+            Text(ind.value, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            if (ind.unit.isNotEmpty()) {
+                Text(
+                    ind.unit,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             ind.change?.let { c ->
                 val color = when {
@@ -403,19 +409,134 @@ private fun ArticleDetailDialog(article: Article, onDismiss: () -> Unit) {
 
 @Composable
 private fun AnnouncementScreen(state: AppState) {
-    if (state.announcements.isEmpty()) {
-        EmptyHint(
-            "暂无重大事项公告。\n" +
-                "只保留重组 / 业绩 / 合同 / 股权变动 / 问询 / 退市等分类。"
-        )
-    } else {
-        LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+    var showPicker by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize()) {
+        // 类型筛选
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(state.announcements) { ann -> AnnouncementRow(ann) }
+            val types = listOf("全部") + state.annCategories
+            types.forEach { type ->
+                val selected = (state.annCategory ?: "全部") == type
+                FilterChip(
+                    selected = selected,
+                    onClick = { state.filterByCategory(if (type == "全部") null else type) },
+                    label = { Text(type, fontSize = 12.sp) }
+                )
+            }
+        }
+
+        // 公司筛选
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = state.annCompany != null,
+                onClick = { showPicker = true },
+                label = {
+                    Text(
+                        state.annCompany?.let { it.second.ifBlank { it.first } } ?: "按公司筛选",
+                        fontSize = 12.sp
+                    )
+                }
+            )
+            if (state.annCompany != null) {
+                TextButton(onClick = { state.filterByCompany(null) }) {
+                    Text("清除", fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "共 ${state.announcements.size} 条",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (state.announcements.isEmpty()) {
+            EmptyHint("没有符合条件的重大事项公告。\n换个类型或清除公司筛选试试。")
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(state.announcements) { ann -> AnnouncementRow(ann) }
+            }
         }
     }
+
+    if (showPicker) {
+        CompanyPickerDialog(
+            companies = state.annCompanies,
+            onDismiss = { showPicker = false },
+            onPick = { picked ->
+                state.filterByCompany(picked)
+                showPicker = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun CompanyPickerDialog(
+    companies: List<Pair<String, String>>,
+    onDismiss: () -> Unit,
+    onPick: (Pair<String, String>?) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = if (query.isBlank()) companies
+    else companies.filter { it.first.contains(query) || it.second.contains(query) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("按公司筛选", fontSize = 16.sp) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    placeholder = { Text("输入代码或名称", fontSize = 13.sp) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "共 ${filtered.size} 家公司",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                    item {
+                        TextButton(
+                            onClick = { onPick(null) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("不限公司", fontSize = 13.sp) }
+                    }
+                    items(filtered) { company ->
+                        TextButton(
+                            onClick = { onPick(company) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                listOf(company.first, company.second)
+                                    .filter { it.isNotBlank() }
+                                    .joinToString(" "),
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
 }
 
 @Composable
