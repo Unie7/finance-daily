@@ -263,11 +263,26 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         return inserted
     }
 
-    fun loadAnnouncements(limit: Int = 200): List<Announcement> {
+    /**
+     * @param category 按公告类型筛（模糊匹配，因为一条公告可能挂多个分类）
+     * @param code     按公司代码筛
+     */
+    fun loadAnnouncements(
+        limit: Int = 300,
+        category: String? = null,
+        code: String? = null
+    ): List<Announcement> {
+        val conds = mutableListOf<String>()
+        val args = mutableListOf<String>()
+        if (!category.isNullOrBlank()) { conds.add("category LIKE ?"); args.add("%$category%") }
+        if (!code.isNullOrBlank()) { conds.add("code = ?"); args.add(code) }
+        val where = if (conds.isEmpty()) "" else "WHERE " + conds.joinToString(" AND ")
+        args.add(limit.toString())
         val out = mutableListOf<Announcement>()
         readableDatabase.rawQuery(
-            "SELECT id,code,name,title,category,url,published_at FROM announcement ORDER BY published_at DESC LIMIT ?",
-            arrayOf(limit.toString())
+            "SELECT id,code,name,title,category,url,published_at FROM announcement $where " +
+                "ORDER BY published_at DESC LIMIT ?",
+            args.toTypedArray()
         ).use { c ->
             while (c.moveToNext()) {
                 out.add(
@@ -314,6 +329,28 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         db.delete("digest", "created_at < ?", arrayOf(cutoff.toString()))
         db.delete("indicator_history", "as_of < date('now', '-90 day')", null)
         return a + b
+    }
+
+    /** 出现次数最多的公告分类，用于类型筛选栏 */
+    fun announcementCategories(limit: Int = 12): List<String> {
+        val out = mutableListOf<String>()
+        readableDatabase.rawQuery(
+            "SELECT category, COUNT(*) c FROM announcement WHERE category <> '' " +
+                "GROUP BY category ORDER BY c DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c -> while (c.moveToNext()) out.add(c.getString(0)) }
+        return out
+    }
+
+    /** 公告涉及的公司（按最近时间排序），用于公司筛选 */
+    fun announcementCompanies(limit: Int = 300): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        readableDatabase.rawQuery(
+            "SELECT code, name, MAX(published_at) t FROM announcement WHERE code <> '' " +
+                "GROUP BY code ORDER BY t DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c -> while (c.moveToNext()) out.add(c.getString(0) to (c.getString(1) ?: "")) }
+        return out
     }
 
     fun counts(): Triple<Int, Int, Int> {
