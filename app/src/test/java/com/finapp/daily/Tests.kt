@@ -166,12 +166,14 @@ class KeywordsTest {
     }
 
     @Test
-    fun `正文反复提到也收`() {
+    fun `只认标题，正文提再多次也不算`() {
+        // 曾经的规则是"正文命中 3 个不同词也收"，结果长文章正文凑巧带出相关词，
+        // 出现过「AI短剧」被标成原油这种事。现在正文完全不参与判断。
         val topics = Keywords.classify(
             "隔夜市场综述",
             "美元指数走强，美元兑人民币走高，分析师认为强势美元将延续。"
         )
-        assertTrue(topics.contains("美元"))
+        assertTrue(topics.isEmpty())
     }
 
     @Test
