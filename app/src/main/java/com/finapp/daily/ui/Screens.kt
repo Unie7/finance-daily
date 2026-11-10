@@ -34,6 +34,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -57,6 +58,7 @@ import com.finapp.daily.data.Article
 import com.finapp.daily.data.Config
 import com.finapp.daily.data.Indicator
 import com.finapp.daily.data.Repo
+import kotlin.math.roundToInt
 
 private val Up = Color(0xFFD32F2F)
 private val Down = Color(0xFF2E7D32)
@@ -299,11 +301,38 @@ private fun NewsScreen(state: AppState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        // 相关度门槛：低于这个分数的资讯不显示，用户自己调
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "相关度≥",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            var slider by remember(state.minRelevance) {
+                mutableStateOf(state.minRelevance.toFloat())
+            }
+            Slider(
+                value = slider,
+                onValueChange = { slider = it },
+                onValueChangeFinished = { state.applyMinRelevance(slider.roundToInt()) },
+                valueRange = 0f..50f,
+                steps = 24,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            )
+            Text(
+                if (state.minRelevance == 0) "不限" else "${state.minRelevance}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         if (state.articles.isEmpty()) {
             EmptyHint(
                 "近 ${Config.NEWS_DAYS} 天没有符合条件的资讯。\n" +
-                    "「全部」显示命中美债/美元/加息/原油的内容；" +
-                    "「彭博」只显示中文站转载并标注「（彭博）」的条目。"
+                    "可以试试调低上面的相关度门槛，或者换一个主题。"
             )
         } else {
             LazyColumn(
