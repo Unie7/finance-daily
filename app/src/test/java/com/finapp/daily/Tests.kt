@@ -348,3 +348,31 @@ class CailianpressTest {
         assertTrue(com.finapp.daily.data.Cailianpress.parse("<!DOCTYPE html>").isEmpty())
     }
 }
+class LeadLineTest {
+
+    @Test
+    fun `见闻标题只取首行，不把第二段混进来`() {
+        // 真实案例：这条曾被判成「原油」，因为 take(60) 把第二段也切进了标题
+        val json = """
+        {"data":{"items":[{
+          "id":1,
+          "content_text":"欧洲央行管委兼法国央行行长Moulin：预计2026年法国GDP增长约0.3%。\n\n认为能源价格出现积极迹象。",
+          "display_time":1794286440,
+          "uri":"https://wallstreetcn.com/livenews/1"
+        }],"next_cursor":1794286440}}
+        """.trimIndent()
+        val list = Sources.parseWscn(json, "2000-01-01 00:00")
+        assertEquals(1, list.size)
+        // 标题里不该出现第二段的「能源价格」
+        assertFalse(list[0].title.contains("能源价格"))
+        // 整条也不该被判成原油
+        assertTrue(Keywords.classify(list[0].title, list[0].summary).isEmpty())
+    }
+
+    @Test
+    fun `leadLine 取第一个非空行`() {
+        assertEquals("标题在第二行", Sources.leadLine("\n\n标题在第二行\n\n正文"))
+        assertEquals("只有一行", Sources.leadLine("只有一行"))
+        assertEquals("", Sources.leadLine(""))
+    }
+}
