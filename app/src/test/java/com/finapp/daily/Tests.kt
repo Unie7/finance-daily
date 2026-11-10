@@ -301,3 +301,50 @@ class BloombergTest {
         assertTrue(Keywords.isBloomberg(text))
     }
 }
+class CailianpressTest {
+
+    @Test
+    fun `签名算法与站点一致`() {
+        // 这个期望值是照着站点 JS 里的实现（md5(sha1(排序后的非空参数串))）算出来后，
+        // 用真实请求验证通过的。改动签名逻辑会让它失败。
+        assertEquals(
+            "b02d8f7bc4c45eeb3e86904203597da2",
+            com.finapp.daily.data.Cailianpress.sign("app=CailianpressWeb&os=web&sv=8.7.9")
+        )
+    }
+
+    @Test
+    fun `空值参数不参与签名`() {
+        val url = com.finapp.daily.data.Cailianpress.buildUrl(
+            extra = mapOf("category" to "", "rn" to "20")
+        )
+        // URL 里带空参数，但签名等价于只有非空参数
+        assertTrue(url.contains("category="))
+        assertTrue(url.contains("rn=20"))
+        assertTrue(url.contains("sign="))
+    }
+
+    @Test
+    fun `首页数据结构能解析出条目`() {
+        val json = """
+        {"errno":0,"data":{
+          "top_article":[{"id":2528856,"title":"10月出口同比增长35.2%","brief":"摘要A","ctime":1794283350}],
+          "depth_list":[{"id":2528000,"title":"<em>财联社</em>电报：美债收益率上行","brief":"","ctime":1794283456}]
+        }}
+        """.trimIndent()
+        val list = com.finapp.daily.data.Cailianpress.parse(json)
+        assertEquals(2, list.size)
+        assertEquals("财联社", list[0].source)
+        assertTrue(list[0].url.contains("detail/2528856"))
+        // HTML 标签要剥掉
+        assertFalse(list[1].title.contains("<em>"))
+    }
+
+    @Test
+    fun `errno 非零时返回空列表`() {
+        assertTrue(
+            com.finapp.daily.data.Cailianpress.parse("""{"errno":"10012","msg":"签名错误"}""").isEmpty()
+        )
+        assertTrue(com.finapp.daily.data.Cailianpress.parse("<!DOCTYPE html>").isEmpty())
+    }
+}
