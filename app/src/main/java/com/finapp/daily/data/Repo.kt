@@ -123,6 +123,10 @@ class Repo(context: Context) {
 
     fun lastUpdatedMillis(): Long = db.lastUpdatedAt()
 
+    fun clearOlderThan(days: Int): Int = db.clearOlderThan(days)
+
+    fun clearAllContent(): Int = db.clearAllContent()
+
     fun lastUpdated(): String? {
         val ts = db.lastUpdatedAt()
         if (ts <= 0) return null
