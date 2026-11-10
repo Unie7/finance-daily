@@ -13,7 +13,7 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
 
     companion object {
         private const val NAME = "finance.db"
-        private const val VERSION = 1
+        private const val VERSION = 2
         const val RETENTION_DAYS = 90
     }
 
