@@ -119,7 +119,12 @@ class Repo(context: Context) {
     fun articles(topic: String? = null, byRelevance: Boolean = false): List<Article> =
         db.loadArticles(topic, byRelevance = byRelevance)
 
-    fun announcements(): List<Announcement> = db.loadAnnouncements()
+    fun announcements(category: String? = null, code: String? = null): List<Announcement> =
+        db.loadAnnouncements(category = category, code = code)
+
+    fun announcementCategories(): List<String> = db.announcementCategories()
+
+    fun announcementCompanies(): List<Pair<String, String>> = db.announcementCompanies()
 
     fun digest(): String? = db.loadDigest(Sources.today())
 
