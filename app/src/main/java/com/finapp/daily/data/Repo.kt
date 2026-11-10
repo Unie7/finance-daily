@@ -95,6 +95,8 @@ class Repo(context: Context) {
         val indicatorList = indicators.values.toList()
         db.upsertIndicators(indicatorList)
         db.insertArticles(articles)
+        // 顺手清掉历史残留：按当前规则不再命中的旧条目（收藏的除外）
+        db.purgeNoTopicArticles()
         db.insertAnnouncements(announcements)
 
         val counts = db.counts()
