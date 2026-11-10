@@ -110,6 +110,8 @@ class AppState(private val context: Context) {
             val upd = repo.lastUpdated()
             val cats = repo.announcementCategories()
             val comps = repo.announcementCompanies()
+            val fa = repo.favoriteArticles()
+            val fn = repo.favoriteAnnouncements()
             main.post {
                 indicators = ind
                 articles = art
@@ -118,6 +120,8 @@ class AppState(private val context: Context) {
                 lastUpdated = upd
                 annCategories = cats
                 annCompanies = comps
+                favoriteArticles = fa
+                favoriteAnnouncements = fn
             }
         }
     }
@@ -161,6 +165,8 @@ class AppState(private val context: Context) {
             val upd = repo.lastUpdated()
             val cats = repo.announcementCategories()
             val comps = repo.announcementCompanies()
+            val fa = repo.favoriteArticles()
+            val fn = repo.favoriteAnnouncements()
             main.post {
                 indicators = ind
                 articles = art
@@ -169,6 +175,8 @@ class AppState(private val context: Context) {
                 lastUpdated = upd
                 annCategories = cats
                 annCompanies = comps
+                favoriteArticles = fa
+                favoriteAnnouncements = fn
                 refreshing = false
                 errorDetail = result.error
                 statusText = when {
@@ -182,30 +190,86 @@ class AppState(private val context: Context) {
         }
     }
 
-    /** 清理 N 天之前的内容 */
-    fun clearOlderThan(days: Int) {
+    // ---------------- 收藏 ----------------
+    var favoriteArticles by mutableStateOf<List<Article>>(emptyList())
+        private set
+    var favoriteAnnouncements by mutableStateOf<List<Announcement>>(emptyList())
+        private set
+
+    fun toggleArticleFavorite(article: Article) {
+        val target = !article.favorite
         executor.execute {
-            val removed = repo.clearOlderThan(days)
+            repo.setArticleFavorite(article.url, target)
             val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
-            val ann = repo.announcements(annCategory, annCompany?.first)
+            val favs = repo.favoriteArticles()
             main.post {
                 articles = art
-                announcements = ann
-                statusText = "已清理 $days 天前的内容，共 $removed 条"
+                favoriteArticles = favs
+                statusText = if (target) "已收藏" else "已取消收藏"
             }
         }
     }
 
-    /** 清空全部资讯和公告 */
-    fun clearAll() {
+    fun toggleAnnouncementFavorite(ann: Announcement) {
+        val target = !ann.favorite
         executor.execute {
-            val removed = repo.clearAllContent()
+            repo.setAnnouncementFavorite(ann.url, target)
+            val list = repo.announcements(annCategory, annCompany?.first)
+            val favs = repo.favoriteAnnouncements()
+            main.post {
+                announcements = list
+                favoriteAnnouncements = favs
+                statusText = if (target) "已收藏" else "已取消收藏"
+            }
+        }
+    }
+
+    private fun loadFavorites() {
+        executor.execute {
+            val fa = repo.favoriteArticles()
+            val fn = repo.favoriteAnnouncements()
+            main.post {
+                favoriteArticles = fa
+                favoriteAnnouncements = fn
+            }
+        }
+    }
+
+    // ---------------- 清理 ----------------
+
+    /** 清理 N 天之前的内容；keepFavorites 为 true 时保留已收藏的 */
+    fun clearOlderThan(days: Int, keepFavorites: Boolean = true) {
+        executor.execute {
+            val removed = repo.clearOlderThan(days, keepFavorites)
             val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
             val ann = repo.announcements(annCategory, annCompany?.first)
+            val fa = repo.favoriteArticles()
+            val fn = repo.favoriteAnnouncements()
             main.post {
                 articles = art
                 announcements = ann
-                statusText = "已清空全部内容，共 $removed 条"
+                favoriteArticles = fa
+                favoriteAnnouncements = fn
+                statusText = "已清理 $days 天前的内容，共 $removed 条" +
+                    if (keepFavorites) "（收藏已保留）" else ""
+            }
+        }
+    }
+
+    /** 清空全部内容；keepFavorites 为 true 时只清未收藏的 */
+    fun clearAll(keepFavorites: Boolean = true) {
+        executor.execute {
+            val removed = repo.clearAllContent(keepFavorites)
+            val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
+            val ann = repo.announcements(annCategory, annCompany?.first)
+            val fa = repo.favoriteArticles()
+            val fn = repo.favoriteAnnouncements()
+            main.post {
+                articles = art
+                announcements = ann
+                favoriteArticles = fa
+                favoriteAnnouncements = fn
+                statusText = "已清空 $removed 条" + if (keepFavorites) "（收藏已保留）" else ""
             }
         }
     }
