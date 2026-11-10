@@ -18,3 +18,7 @@ __pycache__/
 *.pyc
 
 # 注意：data/ 必须入库，Action 每天提交最新数据，jsDelivr 从仓库读取
+
+# 签名密钥（绝不入库）
+keystore/
+keystore.properties
