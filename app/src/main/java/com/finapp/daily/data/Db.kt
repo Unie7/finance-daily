@@ -188,12 +188,21 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
 
     // ------------------------------------------------------------- 资讯
 
-    /** 返回真正新增的条数（UNIQUE url 冲突时被忽略）。 */
+    /**
+     * 逐条 upsert。
+     *
+     * 为什么不能再用 INSERT ... CONFLICT_IGNORE：那样已存在的行会被整体跳过，
+     * topics / score 永远停在第一次入库时的值。改过几次过滤规则之后，
+     * 库里就积了一堆「按旧规则打的标签」——比如「法国GDP」被标成原油。
+     *
+     * 现在改成：先 UPDATE 内容字段（**不碰 favorite / fav_at**），没有行才 INSERT。
+     * 这样每次刷新都会用当前规则重算 topics/score，收藏状态又不会被冲掉。
+     */
     fun insertArticles(items: List<Article>): Int {
         if (items.isEmpty()) return 0
         val db = writableDatabase
         val now = System.currentTimeMillis()
-        var inserted = 0
+        var changed = 0
         db.beginTransaction()
         try {
             for (item in items) {
@@ -207,15 +216,27 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                     put("published_at", item.publishedAt)
                     put("fetched_at", now)
                 }
-                val id = db.insertWithOnConflict("article", null, values, SQLiteDatabase.CONFLICT_IGNORE)
-                if (id > 0) inserted++
+                val updated = db.update("article", values, "url = ?", arrayOf(item.url))
+                if (updated == 0) {
+                    if (db.insert("article", null, values) > 0) changed++
+                } else {
+                    changed++
+                }
             }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
-        return inserted
+        return changed
     }
+
+    /** 清掉历史残留：没收藏且当前规则下不命中任何主题的行。 */
+    fun purgeNoTopicArticles(): Int =
+        writableDatabase.delete(
+            "article",
+            "favorite = 0 AND (topics IS NULL OR topics = '')",
+            null
+        )
 
     /**
      * @param byRelevance true 则按相关度降序，否则按时间降序
