@@ -46,24 +46,21 @@ object Keywords {
         )
     )
 
-    private const val TITLE_WEIGHT = 3
-    private const val BODY_WEIGHT = 1
-    private const val BODY_CAP = 3
-    private const val THRESHOLD = 3
-
     /**
-     * 返回命中的主题（可能为空）。空表示这条资讯不该出现在列表里。
+     * 只认**标题**命中。正文一律不参与判断。
+     *
+     * 为什么这么严：早先用「正文命中 3 个不同词也算」的规则，结果长文章的正文里
+     * 凑巧凑够 3 个相关词就被放进来，出现过「AI短剧」这种完全不相关的条目被标成原油。
+     * 用户要求高度相关，所以砍掉正文判断，宁缺毋滥。
+     *
+     * body 参数保留只是为了调用方不用改，实际不参与计算。
      */
     fun classify(title: String, body: String): List<String> {
-        if (title.isBlank() && body.isBlank()) return emptyList()
+        if (title.isBlank()) return emptyList()
         val t = title.lowercase()
-        val b = body.lowercase()
-        return RULES.entries.mapNotNull { (topic, words) ->
-            val titleHit = words.any { t.contains(it) }
-            val bodyHits = words.count { b.contains(it) }.coerceAtMost(BODY_CAP)
-            val score = (if (titleHit) TITLE_WEIGHT else 0) + bodyHits * BODY_WEIGHT
-            if (score >= THRESHOLD) topic else null
-        }
+        return RULES.entries
+            .filter { (_, words) -> words.any { t.contains(it) } }
+            .map { it.key }
     }
 
 // ------------------------------------------------------------------ 彭博
