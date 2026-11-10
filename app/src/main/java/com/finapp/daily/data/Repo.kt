@@ -109,11 +109,19 @@ class Repo(context: Context) {
             problems.add("近 ${Config.NEWS_DAYS} 天没有彭博社转载内容")
         }
 
+        // 按源统计：抓了多少、过滤后剩多少，让界面能说清"为什么没内容"
+        val rawBySource = pool.groupingBy { it.source }.eachCount()
+        val keptBySource = articles.groupingBy { it.source }.eachCount()
+        val stats = rawBySource.entries
+            .sortedByDescending { it.value }
+            .map { SourceStat(it.key, it.value, keptBySource[it.key] ?: 0) }
+
         return RefreshResult(
             indicatorCount = indicatorList.size,
             articleCount = articles.size,
             announcementCount = announcements.size,
-            error = problems.takeIf { it.isNotEmpty() }?.joinToString("；")
+            error = problems.takeIf { it.isNotEmpty() }?.joinToString("；"),
+            stats = stats
         )
     }
 
