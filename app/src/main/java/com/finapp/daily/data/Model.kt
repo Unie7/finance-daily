@@ -24,7 +24,9 @@ data class Article(
     val url: String,
     val publishedAt: String,
     /** 命中的主题：美债 / 美元 / 加息 / 原油，逗号分隔 */
-    val topics: String = ""
+    val topics: String = "",
+    /** 相关度分数，越大越相关。用于「按相关度」排序 */
+    val score: Int = 0
 )
 
 /** 一条上市公司公告 */
