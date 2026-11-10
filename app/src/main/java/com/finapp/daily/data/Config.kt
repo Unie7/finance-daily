@@ -10,7 +10,7 @@ package com.finapp.daily.data
  */
 object Config {
 
-    const val VERSION_NAME = "0.2.0"
+    const val VERSION_NAME = "0.2.1"
 
     private const val REPO = "Unie7/finance-daily"
     private const val BRANCH = "main"
@@ -41,14 +41,14 @@ object Config {
     const val AUTO_REFRESH_INTERVAL_MS = 10 * 60 * 1000L
 
     /** 资讯回溯天数 */
-    const val NEWS_DAYS = 3
+    const val NEWS_DAYS = 7
 
     /** 东方财富资讯：翻几页、每页多少条 */
-    const val EASTMONEY_NEWS_PAGES = 8
+    const val EASTMONEY_NEWS_PAGES = 14
     const val EASTMONEY_NEWS_PAGE_SIZE = 50
 
     /** 华尔街见闻 7x24：翻几页、每页多少条 */
-    const val WSCN_PAGES = 8
+    const val WSCN_PAGES = 16
     const val WSCN_PAGE_SIZE = 100
 
     /** 公告：抓几页、每页多少条 */
