@@ -47,12 +47,16 @@ data class Announcement(
     val favoriteAt: Long = 0L
 )
 
+/** 单个数据源本轮抓了多少条、过滤后留下多少条 */
+data class SourceStat(val name: String, val fetched: Int, val kept: Int)
+
 /** 一次抓取的结果 */
 data class RefreshResult(
     val indicatorCount: Int = 0,
     val articleCount: Int = 0,
     val announcementCount: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    val stats: List<SourceStat> = emptyList()
 ) {
     val isEmpty: Boolean get() = indicatorCount == 0 && articleCount == 0 && announcementCount == 0
 }
