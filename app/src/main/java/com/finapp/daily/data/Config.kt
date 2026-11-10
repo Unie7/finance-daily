@@ -10,7 +10,7 @@ package com.finapp.daily.data
  */
 object Config {
 
-    const val VERSION_NAME = "0.6.0"
+    const val VERSION_NAME = "0.7.0"
 
     private const val REPO = "Unie7/finance-daily"
     private const val BRANCH = "main"
