@@ -5,9 +5,15 @@ import android.content.Context
 /**
  * 刷新编排层。
  *
- * 资讯口径（按用户要求）：**只收彭博社相关的内容**（中文站转载时一般标「（彭博）」）。
- * 实测东财和新浪都不带这个标记，只有华尔街见闻 7x24 会带，所以彭博内容主要来自那里。
- * 如果一段时间内一条都没有，则退回到「四主题过滤」并在界面提示，避免整页空白。
+ * 资讯口径（根据实测数据定）：
+ *   1. 主 feed 按「美债/美元/加息/原油」四主题过滤，保证内容对题
+ *   2. 彭博社转载的条目额外打「彭博」标签，即使不属于四主题也保留（可用筛选项单独看）
+ *
+ * 实测依据（3.5 天、800 条见闻快讯）：
+ *   - 东财 400 条 / 新浪 50 条：提到彭博 0 条
+ *   - 见闻 800 条：提到彭博 31 条，其中「引用形态」22 条、彭博指数类 9 条
+ *   - 22 条真引用里命中四主题的只有 4 条（13%），内容是产业/企业新闻
+ *   → 所以「彭博 + 宏观」在免费源里几乎没有交集，只能做混合口径
  */
 class Repo(context: Context) {
 
@@ -30,7 +36,7 @@ class Repo(context: Context) {
                 ?.forEach { indicators.putIfAbsent(it.code, it) }
         }
 
-        // ---------------- 2. 资讯：彭博优先 ----------------
+        // ---------------- 2. 资讯：四主题为主 + 彭博条目标注 ----------------
         val since = Sources.sinceLabel(Config.NEWS_DAYS)
         val raw = mutableListOf<Article>()
 
@@ -44,26 +50,15 @@ class Repo(context: Context) {
             .filter { it.publishedAt.isEmpty() || it.publishedAt >= since }
             .distinctBy { it.url }
 
-        val bloomberg = pool.filter {
-            Keywords.isBloomberg(it.title + " " + it.summary)
+        val articles = pool.mapNotNull { article ->
+            val topics = Keywords.classify(article.title, article.summary).toMutableList()
+            if (Keywords.isBloomberg(article.title + " " + article.summary)) {
+                topics.add(0, PSEUDO_BLOOMBERG)
+            }
+            if (topics.isEmpty()) null else article.copy(topics = topics.joinToString(","))
         }
-
-        val articles: List<Article>
-        if (bloomberg.isNotEmpty()) {
-            // 彭博口径：全部保留，只打主题标签（不因主题不匹配而丢弃）
-            articles = bloomberg
-                .map { it.copy(topics = Keywords.classify(it.title, it.summary).joinToString(",")) }
-                .sortedByDescending { it.publishedAt }
-        } else {
-            // 兜底：3 天内没有彭博内容，退回四主题过滤，至少不为空
-            articles = pool
-                .mapNotNull { a ->
-                    val topics = Keywords.classify(a.title, a.summary)
-                    if (topics.isEmpty()) null else a.copy(topics = topics.joinToString(","))
-                }
-                .sortedByDescending { it.publishedAt }
-            problems.add("近 ${Config.NEWS_DAYS} 天没有彭博社相关内容，暂显示四主题资讯")
-        }
+            .sortedByDescending { it.publishedAt }
+            .take(MAX_ARTICLES)
 
         // ---------------- 3. 公告：东财分类筛，失败退回巨潮 ----------------
         var announcements: List<Announcement> = emptyList()
@@ -100,6 +95,11 @@ class Repo(context: Context) {
             Digest.build(indicatorList, counts.second, counts.third, missing)
         )
         db.sweep()
+
+        val bloombergCount = articles.count { it.topics.contains(PSEUDO_BLOOMBERG) }
+        if (bloombergCount == 0) {
+            problems.add("近 ${Config.NEWS_DAYS} 天没有彭博社转载内容")
+        }
 
         return RefreshResult(
             indicatorCount = indicatorList.size,
@@ -170,6 +170,11 @@ class Repo(context: Context) {
     }
 
     companion object {
+        /** 伪主题：用它当筛选标签，复用现有的 topics LIKE 查询 */
+        const val PSEUDO_BLOOMBERG = "彭博"
+
+        const val MAX_ARTICLES = 300
+
         val EXPECTED_CODES =
             listOf("US10Y", "US2Y", "US30Y", "FED_TARGET", "DXY", "WTI", "BRENT")
 
