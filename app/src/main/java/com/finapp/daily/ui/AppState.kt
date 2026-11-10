@@ -51,10 +51,19 @@ class AppState(private val context: Context) {
         loadArticles()
     }
 
+    /** 资讯排序方式：false=最新，true=按相关度 */
+    var sortByRelevance by mutableStateOf(false)
+        private set
+
+    fun setSort(relevance: Boolean) {
+        sortByRelevance = relevance
+        loadArticles()
+    }
+
     fun loadFromDb() {
         executor.execute {
             val ind = repo.indicators()
-            val art = repo.articles(topicFilter)
+            val art = repo.articles(topicFilter, sortByRelevance)
             val ann = repo.announcements()
             val dig = repo.digest()
             val upd = repo.lastUpdated()
@@ -70,7 +79,7 @@ class AppState(private val context: Context) {
 
     private fun loadArticles() {
         executor.execute {
-            val art = repo.articles(topicFilter)
+            val art = repo.articles(topicFilter, sortByRelevance)
             main.post { articles = art }
         }
     }
@@ -101,7 +110,7 @@ class AppState(private val context: Context) {
                 RefreshResult(error = e.message ?: e.javaClass.simpleName)
             }
             val ind = repo.indicators()
-            val art = repo.articles(topicFilter)
+            val art = repo.articles(topicFilter, sortByRelevance)
             val ann = repo.announcements()
             val dig = repo.digest()
             val upd = repo.lastUpdated()
@@ -128,7 +137,7 @@ class AppState(private val context: Context) {
     fun clearOlderThan(days: Int) {
         executor.execute {
             val removed = repo.clearOlderThan(days)
-            val art = repo.articles(topicFilter)
+            val art = repo.articles(topicFilter, sortByRelevance)
             val ann = repo.announcements()
             main.post {
                 articles = art
@@ -142,7 +151,7 @@ class AppState(private val context: Context) {
     fun clearAll() {
         executor.execute {
             val removed = repo.clearAllContent()
-            val art = repo.articles(topicFilter)
+            val art = repo.articles(topicFilter, sortByRelevance)
             val ann = repo.announcements()
             main.post {
                 articles = art
