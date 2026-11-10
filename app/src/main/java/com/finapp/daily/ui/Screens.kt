@@ -14,12 +14,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.finapp.daily.data.Announcement
 import com.finapp.daily.data.Article
 import com.finapp.daily.data.Indicator
+import com.finapp.daily.data.Keywords
 
 private val Up = Color(0xFFD32F2F)
 private val Down = Color(0xFF2E7D32)
@@ -53,7 +59,7 @@ private val Down = Color(0xFF2E7D32)
 @Composable
 fun FinanceApp(state: AppState) {
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("概览", "资讯", "公告")
+    val tabs = listOf("概览", "彭博资讯", "公告")
 
     Scaffold { innerPadding ->
         Column(Modifier.padding(innerPadding).fillMaxSize()) {
@@ -143,7 +149,7 @@ private fun OverviewScreen(state: AppState) {
 
         val top = state.articles.take(5)
         if (top.isNotEmpty()) {
-            item { SectionTitle("今日要闻") }
+            item { SectionTitle("今日彭博") }
             items(top) { article -> ArticleRow(article) }
         }
     }
@@ -202,10 +208,12 @@ private fun IndicatorCard(ind: Indicator, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Badge(text: String) {
+private fun Badge(text: String, container: Color = Color.Unspecified) {
+    val bg = if (container == Color.Unspecified)
+        MaterialTheme.colorScheme.tertiaryContainer else container
     Box(
         Modifier
-            .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(4.dp))
+            .background(bg, RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp)
     ) {
         Text(text, fontSize = 9.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
@@ -228,6 +236,8 @@ private fun DigestCard(text: String) {
 @Composable
 private fun NewsScreen(state: AppState) {
     val topics = listOf("全部", "美债", "美元", "加息", "原油")
+    var detail by remember { mutableStateOf<Article?>(null) }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
@@ -243,24 +253,44 @@ private fun NewsScreen(state: AppState) {
             }
         }
         if (state.articles.isEmpty()) {
-            EmptyHint("近 3 天没有符合条件的内容。\n只收录标题就明确在讲「美债 / 美元 / 加息 / 原油」的资讯。")
+            EmptyHint(
+                "近 3 天没有抓到彭博社相关内容。\n" +
+                    "彭博原文有付费墙抓不到，这里收的是中文站转载并标注「（彭博）」的部分，" +
+                    "某几天没有属正常。"
+            )
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(state.articles) { article -> ArticleRow(article) }
+                items(state.articles) { article ->
+                    ArticleRow(article) { detail = article }
+                }
             }
         }
+    }
+
+    detail?.let { article ->
+        ArticleDetailDialog(article) { detail = null }
     }
 }
 
 @Composable
-private fun ArticleRow(article: Article) {
-    val context = LocalContext.current
-    Card(Modifier.fillMaxWidth().clickable { openUrl(context, article.url) }) {
+private fun ArticleRow(article: Article, onClick: () -> Unit = {}) {
+    Card(Modifier.fillMaxWidth().clickable { onClick() }) {
         Column(Modifier.padding(12.dp)) {
-            Text(article.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 3)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (Keywords.isBloomberg(article.title + " " + article.summary)) {
+                    Badge("彭博")
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    article.title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 3
+                )
+            }
             if (article.summary.isNotEmpty() && article.summary != article.title) {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -291,12 +321,53 @@ private fun ArticleRow(article: Article) {
     }
 }
 
+/**
+ * 站内详情。见闻的快讯正文我们已经抓到了，直接在这里读，不用跳转、不用登录。
+ */
+@Composable
+private fun ArticleDetailDialog(article: Article, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(article.title, fontSize = 15.sp, lineHeight = 21.sp) },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    "${article.source} · ${article.publishedAt}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(article.summary, fontSize = 13.sp, lineHeight = 21.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+        dismissButton = {
+            if (article.url.isNotBlank()) {
+                TextButton(onClick = {
+                    openUrl(context, article.url)
+                    onDismiss()
+                }) { Text("浏览器打开") }
+            }
+        }
+    )
+}
+
 // ------------------------------------------------------------------ 公告
 
 @Composable
 private fun AnnouncementScreen(state: AppState) {
     if (state.announcements.isEmpty()) {
-        EmptyHint("暂无重大事项公告。\n只保留重组 / 业绩 / 合同 / 股权变动 / 问询 / 退市等分类。")
+        EmptyHint(
+            "暂无重大事项公告。\n" +
+                "只保留重组 / 业绩 / 合同 / 股权变动 / 问询 / 退市等分类。"
+        )
     } else {
         LazyColumn(
             contentPadding = PaddingValues(16.dp),
@@ -330,11 +401,7 @@ private fun AnnouncementRow(ann: Announcement) {
             Text(ann.title, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (ann.category.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    ann.category,
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
+                Text(ann.category, fontSize = 10.sp, color = MaterialTheme.colorScheme.tertiary)
             }
         }
     }
@@ -366,7 +433,7 @@ private fun openUrl(context: Context, url: String) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
     } catch (e: Exception) {
-        // 没有浏览器就静默忽略，不影响主流程
+        // 没有浏览器就静默忽略
     }
 }
 
