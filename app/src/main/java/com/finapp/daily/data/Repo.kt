@@ -184,14 +184,16 @@ class Repo(context: Context) {
      */
     private fun reclassifyStoredArticles() {
         for (a in db.loadAllArticlesForReclassify()) {
-            val topics = Keywords.classify(a.title, a.summary).toMutableList()
-            if (Keywords.isBloomberg(a.title + " " + a.summary)) {
+            // 不信任库里的 title（老版本可能存的是截断正文），统一从正文首行重建
+            val lead = Sources.leadLine(a.summary.ifBlank { a.title })
+            val topics = Keywords.classify(lead, a.summary).toMutableList()
+            if (Keywords.isBloomberg(lead + " " + a.summary)) {
                 topics.add(0, PSEUDO_BLOOMBERG)
             }
             val newTopics = topics.joinToString(",")
-            val newScore = Keywords.relevance(a.title, a.summary)
-            if (newTopics != a.topics || newScore != a.score) {
-                db.updateArticleTopics(a.url, newTopics, newScore)
+            val newScore = Keywords.relevance(lead, a.summary)
+            if (newTopics != a.topics || newScore != a.score || lead != a.title) {
+                db.updateArticleDerived(a.url, lead, newTopics, newScore)
             }
         }
         db.purgeNoTopicArticles()
