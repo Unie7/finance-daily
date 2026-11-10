@@ -52,11 +52,25 @@ class AppState(private val context: Context) {
     }
 
     /** 资讯排序方式：false=最新，true=按相关度 */
-    var sortByRelevance by mutableStateOf(false)
+    private val prefs = context.getSharedPreferences("finance_prefs", Context.MODE_PRIVATE)
+
+    var sortByRelevance by mutableStateOf(prefs.getBoolean("sort_relevance", false))
         private set
 
     fun setSort(relevance: Boolean) {
         sortByRelevance = relevance
+        prefs.edit().putBoolean("sort_relevance", relevance).apply()
+        loadArticles()
+    }
+
+    /** 相关度门槛：低于这个分数的资讯不显示。用户可以自己调。 */
+    var minRelevance by mutableStateOf(prefs.getInt("min_relevance", 0))
+        private set
+
+    fun applyMinRelevance(value: Int) {
+        val v = value.coerceIn(0, 50)
+        minRelevance = v
+        prefs.edit().putInt("min_relevance", v).apply()
         loadArticles()
     }
 
@@ -90,7 +104,7 @@ class AppState(private val context: Context) {
     fun loadFromDb() {
         executor.execute {
             val ind = repo.indicators()
-            val art = repo.articles(topicFilter, sortByRelevance)
+            val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
             val ann = repo.announcements(annCategory, annCompany?.first)
             val dig = repo.digest()
             val upd = repo.lastUpdated()
@@ -110,7 +124,7 @@ class AppState(private val context: Context) {
 
     private fun loadArticles() {
         executor.execute {
-            val art = repo.articles(topicFilter, sortByRelevance)
+            val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
             main.post { articles = art }
         }
     }
@@ -141,7 +155,7 @@ class AppState(private val context: Context) {
                 RefreshResult(error = e.message ?: e.javaClass.simpleName)
             }
             val ind = repo.indicators()
-            val art = repo.articles(topicFilter, sortByRelevance)
+            val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
             val ann = repo.announcements(annCategory, annCompany?.first)
             val dig = repo.digest()
             val upd = repo.lastUpdated()
@@ -172,7 +186,7 @@ class AppState(private val context: Context) {
     fun clearOlderThan(days: Int) {
         executor.execute {
             val removed = repo.clearOlderThan(days)
-            val art = repo.articles(topicFilter, sortByRelevance)
+            val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
             val ann = repo.announcements(annCategory, annCompany?.first)
             main.post {
                 articles = art
@@ -186,7 +200,7 @@ class AppState(private val context: Context) {
     fun clearAll() {
         executor.execute {
             val removed = repo.clearAllContent()
-            val art = repo.articles(topicFilter, sortByRelevance)
+            val art = repo.articles(topicFilter, sortByRelevance, minRelevance)
             val ann = repo.announcements(annCategory, annCompany?.first)
             main.post {
                 articles = art
