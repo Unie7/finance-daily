@@ -130,25 +130,28 @@ private fun Header(state: AppState, onClear: () -> Unit) {
 
 // ------------------------------------------------------------------ 概览
 
+/** 概览顶部只放这三个行情方框；几年期的美债写在综述里 */
+private val CARD_CODES = listOf("DXY", "WTI", "BRENT")
+
 @Composable
 private fun OverviewScreen(state: AppState) {
-    val indicators = state.indicators
+    var detail by remember { mutableStateOf<Article?>(null) }
+
+    val cards = CARD_CODES.mapNotNull { code ->
+        state.indicators.firstOrNull { it.code == code }
+    }
+
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (indicators.isEmpty()) {
-            item { EmptyHint("还没有指标数据，点右上角「刷新」试一下") }
+        if (cards.isEmpty()) {
+            item { EmptyHint("还没有行情数据，点右上角「刷新」试一下") }
         } else {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    indicators.take(6).chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            row.forEach { ind -> IndicatorCard(ind, Modifier.weight(1f)) }
-                            if (row.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    cards.forEach { ind -> IndicatorCard(ind, Modifier.weight(1f)) }
                 }
             }
         }
@@ -158,8 +161,14 @@ private fun OverviewScreen(state: AppState) {
         val top = state.articles.take(5)
         if (top.isNotEmpty()) {
             item { SectionTitle("今日要闻") }
-            items(top) { article -> ArticleRow(article) }
+            items(top) { article ->
+                ArticleRow(article) { detail = article }
+            }
         }
+    }
+
+    detail?.let { article ->
+        ArticleDetailDialog(article) { detail = null }
     }
 }
 
@@ -263,7 +272,7 @@ private fun NewsScreen(state: AppState) {
         }
         if (state.articles.isEmpty()) {
             EmptyHint(
-                "近 3 天没有符合条件的资讯。\n" +
+                "近 ${Config.NEWS_DAYS} 天没有符合条件的资讯。\n" +
                     "「全部」显示命中美债/美元/加息/原油的内容；" +
                     "「彭博」只显示中文站转载并标注「（彭博）」的条目。"
             )
