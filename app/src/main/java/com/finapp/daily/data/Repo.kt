@@ -58,10 +58,15 @@ class Repo(context: Context) {
 
         val articles = pool.mapNotNull { article ->
             val topics = Keywords.classify(article.title, article.summary).toMutableList()
+            // 必须先命中主题。彭博转载只是「标签」，不是「通行证」——
+            // 早先把它当成免检通道，结果「外交部记者会（彭博社记者提问）」这类
+            // 完全无关的内容也进了列表。实测 800 条见闻里，同时满足
+            // 「命中主题」和「提彭博」的只有 4 条，但那 4 条质量很高。
+            if (topics.isEmpty()) return@mapNotNull null
             if (Keywords.isBloomberg(article.title + " " + article.summary)) {
                 topics.add(0, PSEUDO_BLOOMBERG)
             }
-            if (topics.isEmpty()) null else article.copy(
+            article.copy(
                 topics = topics.joinToString(","),
                 score = Keywords.relevance(article.title, article.summary)
             )
@@ -187,7 +192,8 @@ class Repo(context: Context) {
             // 不信任库里的 title（老版本可能存的是截断正文），统一从正文首行重建
             val lead = Sources.leadLine(a.summary.ifBlank { a.title })
             val topics = Keywords.classify(lead, a.summary).toMutableList()
-            if (Keywords.isBloomberg(lead + " " + a.summary)) {
+            // 同样：先判主题，再加彭博标签
+            if (topics.isNotEmpty() && Keywords.isBloomberg(lead + " " + a.summary)) {
                 topics.add(0, PSEUDO_BLOOMBERG)
             }
             val newTopics = topics.joinToString(",")
