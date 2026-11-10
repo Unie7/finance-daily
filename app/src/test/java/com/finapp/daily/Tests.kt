@@ -265,3 +265,23 @@ class DigestTest {
         assertTrue(text.contains("本期未取到"))
     }
 }
+
+class BloombergTest {
+
+    @Test
+    fun `识别彭博转载标记`() {
+        assertTrue(Keywords.isBloomberg("日本半导体企业Rapidus据称难以按期实现量产。（彭博）"))
+        assertTrue(Keywords.isBloomberg("据彭博社报道，美联储官员倾向于放缓降息"))
+        assertTrue(Keywords.isBloomberg("Bloomberg reported the yield curve"))
+        assertFalse(Keywords.isBloomberg("某公司发布新款手机"))
+        assertFalse(Keywords.isBloomberg(""))
+    }
+
+    @Test
+    fun `彭博快讯即使不命中四主题也应保留`() {
+        val text = "日本半导体企业Rapidus据称难以按期实现量产。（彭博）"
+        // 主题打不上标签（不是美债/美元/加息/原油），但彭博标记在
+        assertTrue(Keywords.classify(text, text).isEmpty())
+        assertTrue(Keywords.isBloomberg(text))
+    }
+}
