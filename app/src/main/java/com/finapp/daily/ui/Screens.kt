@@ -1,9 +1,14 @@
 package com.finapp.daily.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,7 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -34,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,8 +47,8 @@ import com.finapp.daily.data.Announcement
 import com.finapp.daily.data.Article
 import com.finapp.daily.data.Indicator
 
-private val Up = Color(0xFFD32F2F)      // A 股习惯：涨红
-private val Down = Color(0xFF2E7D32)    // 跌绿
+private val Up = Color(0xFFD32F2F)
+private val Down = Color(0xFF2E7D32)
 
 @Composable
 fun FinanceApp(state: AppState) {
@@ -99,6 +104,14 @@ private fun Header(state: AppState) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
         )
     }
+    state.errorDetail?.let {
+        Text(
+            "⚠ $it",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+        )
+    }
 }
 
 // ------------------------------------------------------------------ 概览
@@ -108,20 +121,17 @@ private fun OverviewScreen(state: AppState) {
     val indicators = state.indicators
     LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (indicators.isEmpty()) {
-            item { EmptyHint("还没有数据，点右上角「刷新」试一下") }
+            item { EmptyHint("还没有指标数据，点右上角「刷新」试一下") }
         } else {
             item {
-                val cards = indicators.take(6)
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    cards.chunked(2).forEach { row ->
+                    indicators.take(6).chunked(2).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            row.forEach { ind ->
-                                IndicatorCard(ind, Modifier.weight(1f))
-                            }
+                            row.forEach { ind -> IndicatorCard(ind, Modifier.weight(1f)) }
                             if (row.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
@@ -129,9 +139,7 @@ private fun OverviewScreen(state: AppState) {
             }
         }
 
-        state.digest?.let { text ->
-            item { DigestCard(text) }
-        }
+        state.digest?.let { item { DigestCard(it) } }
 
         val top = state.articles.take(5)
         if (top.isNotEmpty()) {
@@ -159,19 +167,14 @@ private fun IndicatorCard(ind: Indicator, modifier: Modifier = Modifier) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (ind.precision == "news") {
-                    Badge("资讯提取")
-                } else if (ind.precision == "local") {
-                    Badge("境内源")
+                when (ind.precision) {
+                    "news" -> Badge("资讯提取")
+                    "local" -> Badge("境内源")
                 }
             }
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    ind.value,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Text(ind.value, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 if (ind.unit.isNotEmpty()) {
                     Text(
                         ind.unit,
@@ -193,11 +196,7 @@ private fun IndicatorCard(ind: Indicator, modifier: Modifier = Modifier) {
                     color = color
                 )
             }
-            Text(
-                ind.asOf,
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text(ind.asOf, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -244,10 +243,10 @@ private fun NewsScreen(state: AppState) {
             }
         }
         if (state.articles.isEmpty()) {
-            EmptyHint("暂无相关资讯。只收录命中「美债/美元/加息/原油」的内容。")
+            EmptyHint("近 3 天没有符合条件的内容。\n只收录标题就明确在讲「美债 / 美元 / 加息 / 原油」的资讯。")
         } else {
             LazyColumn(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(state.articles) { article -> ArticleRow(article) }
@@ -258,7 +257,8 @@ private fun NewsScreen(state: AppState) {
 
 @Composable
 private fun ArticleRow(article: Article) {
-    Card {
+    val context = LocalContext.current
+    Card(Modifier.fillMaxWidth().clickable { openUrl(context, article.url) }) {
         Column(Modifier.padding(12.dp)) {
             Text(article.title, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 3)
             if (article.summary.isNotEmpty() && article.summary != article.title) {
@@ -296,10 +296,10 @@ private fun ArticleRow(article: Article) {
 @Composable
 private fun AnnouncementScreen(state: AppState) {
     if (state.announcements.isEmpty()) {
-        EmptyHint("暂无重大事项公告。只保留重组/业绩/合同/股权/问询/退市等类别。")
+        EmptyHint("暂无重大事项公告。\n只保留重组 / 业绩 / 合同 / 股权变动 / 问询 / 退市等分类。")
     } else {
         LazyColumn(
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             items(state.announcements) { ann -> AnnouncementRow(ann) }
@@ -309,20 +309,33 @@ private fun AnnouncementScreen(state: AppState) {
 
 @Composable
 private fun AnnouncementRow(ann: Announcement) {
-    Card {
+    val context = LocalContext.current
+    Card(Modifier.fillMaxWidth().clickable { openUrl(context, ann.url) }) {
         Column(Modifier.padding(12.dp)) {
             Row {
                 Text(
-                    "${ann.code} ${ann.name}",
+                    listOf(ann.code, ann.name).filter { it.isNotBlank() }.joinToString(" "),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
                 )
                 Spacer(Modifier.weight(1f))
-                Text(ann.publishedAt, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    ann.publishedAt,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Spacer(Modifier.height(4.dp))
             Text(ann.title, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (ann.category.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    ann.category,
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
         }
     }
 }
@@ -340,8 +353,20 @@ private fun EmptyHint(text: String) {
         Text(
             text,
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 20.sp
         )
+    }
+}
+
+private fun openUrl(context: Context, url: String) {
+    if (url.isBlank()) return
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // 没有浏览器就静默忽略，不影响主流程
     }
 }
 
