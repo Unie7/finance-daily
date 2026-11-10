@@ -8,23 +8,17 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 四个数据源的抓取实现。全部是公开接口，不需要任何 key。
+ * 数据源抓取。全部是公开接口，不需要任何 key。
  *
- * 分工：
- *   - 云端（GitHub Actions）抓境外指标 → [CloudIndicators]
- *   - 手机直连抓境内源 → [DomesticQuotes] / [WscnNews] / [EastmoneyNews] / [CninfoAnnouncements]
+ * 解析逻辑都抽成纯函数（parseXxx），只吃字符串、不碰网络，
+ * 这样可以用真实报文在 JVM 上做单元测试，不需要模拟器。
  */
 object Sources {
 
     // ------------------------------------------------------------ 云端指标
 
-    /**
-     * 解析云端 latest.json。
-     * 结构见仓库 README：{ generated_at, indicators: { CODE: {value,change,as_of,...} } }
-     */
     fun parseCloudIndicators(json: String): List<Indicator> {
-        val root = JSONObject(json)
-        val indicators = root.optJSONObject("indicators") ?: return emptyList()
+        val indicators = JSONObject(json).optJSONObject("indicators") ?: return emptyList()
         val out = mutableListOf<Indicator>()
         indicators.keys().forEach { code ->
             val item = indicators.optJSONObject(code) ?: return@forEach
@@ -35,8 +29,6 @@ object Sources {
                 else -> null
             } ?: return@forEach
 
-            // 云端只有官方/接口数据，没有资讯提取
-            val precision = "official"
             out.add(
                 Indicator(
                     code = code,
@@ -46,7 +38,7 @@ object Sources {
                     change = if (item.has("change") && !item.isNull("change"))
                         item.optDouble("change") else null,
                     asOf = item.optString("as_of", ""),
-                    precision = precision,
+                    precision = "official",
                     source = "云端"
                 )
             )
@@ -54,16 +46,28 @@ object Sources {
         return out
     }
 
-    fun fetchCloud(): List<Indicator> = parseCloudIndicators(Http.get(Config.cloudUrl))
+    /**
+     * 依次尝试多个 jsDelivr 镜像，全部失败时抛出带明细的异常，
+     * 让界面能显示到底哪个地址出了什么问题。
+     */
+    fun fetchCloud(): List<Indicator> {
+        val urls = Config.DEBUG_CLOUD_URL?.let { listOf(it) } ?: Config.CLOUD_MIRRORS
+        val failures = mutableListOf<String>()
+        for (url in urls) {
+            val host = url.substringAfter("//").substringBefore("/")
+            try {
+                val list = parseCloudIndicators(Http.get(url, timeoutMs = 12000))
+                if (list.isNotEmpty()) return list
+                failures.add("$host 返回空")
+            } catch (e: Exception) {
+                failures.add("$host ${e.message?.take(50) ?: e.javaClass.simpleName}")
+            }
+        }
+        throw RuntimeException(failures.joinToString(" / "))
+    }
 
     // ------------------------------------------------------------ 境内行情
 
-    /**
-     * 境内兜底行情：
-     *   美元指数 ← 东方财富 100.UDI
-     *   WTI / 布伦特 ← 新浪外盘期货 hf_CL / hf_OIL
-     * 这两个接口都实测可用，字段位置已核对。
-     */
     fun fetchDomesticQuotes(): List<Indicator> {
         val out = mutableListOf<Indicator>()
         out += fetchEastmoneyDxy()
@@ -75,8 +79,7 @@ object Sources {
         return try {
             val url = "https://push2.eastmoney.com/api/qt/ulist.np/get" +
                 "?fltt=2&invt=2&secids=100.UDI&fields=f2,f3,f4,f12,f14,f18"
-            val text = Http.get(url)
-            val diff = JSONObject(text).optJSONObject("data")
+            val diff = JSONObject(Http.get(url)).optJSONObject("data")
                 ?.optJSONArray("diff") ?: return emptyList()
             if (diff.length() == 0) return emptyList()
             val row = diff.getJSONObject(0)
@@ -103,9 +106,7 @@ object Sources {
      * 新浪外盘期货字段（已核对）：
      *   [0] 现价  [2] 买价  [3] 卖价  [4] 最高  [5] 最低
      *   [6] 时间  [7] 昨收  [8] 开盘  [12] 日期  [13] 名称
-     * 返回 GBK 编码，必须带 Referer。
      */
-    @SuppressLint("SimpleDateFormat")
     private fun fetchSinaOil(): List<Indicator> {
         return try {
             val text = Http.get(
@@ -113,46 +114,54 @@ object Sources {
                 headers = mapOf("Referer" to "https://finance.sina.com.cn"),
                 charset = "GBK"
             )
-            val out = mutableListOf<Indicator>()
-            text.lineSequence().forEach { line ->
-                val trimmed = line.trim()
-                if (!trimmed.startsWith("var hq_str_hf_")) return@forEach
-                val symbol = trimmed.substringAfter("hq_str_").substringBefore("=")
-                val body = trimmed.substringAfter("\"").substringBeforeLast("\"")
-                val f = body.split(",")
-                if (f.size < 14) return@forEach
-                val price = f[0].toDoubleOrNull() ?: return@forEach
-                val prev = f[7].toDoubleOrNull()
-                val (code, title) = when (symbol) {
-                    "hf_CL" -> "WTI" to "WTI原油"
-                    "hf_OIL" -> "BRENT" to "布伦特原油"
-                    else -> return@forEach
-                }
-                out.add(
-                    Indicator(
-                        code = code,
-                        title = title,
-                        value = trimNumber(price),
-                        unit = "美元/桶",
-                        change = prev?.let { round3(price - it) },
-                        asOf = f[12],
-                        precision = "local",
-                        source = "新浪财经"
-                    )
-                )
-            }
-            out
+            parseSinaOil(text)
         } catch (e: Exception) {
             emptyList()
         }
     }
 
+    fun parseSinaOil(text: String): List<Indicator> {
+        val out = mutableListOf<Indicator>()
+        text.lineSequence().forEach { line ->
+            val trimmed = line.trim()
+            if (!trimmed.startsWith("var hq_str_hf_")) return@forEach
+            val symbol = trimmed.substringAfter("hq_str_").substringBefore("=")
+            val body = trimmed.substringAfter("\"").substringBeforeLast("\"")
+            val f = body.split(",")
+            if (f.size < 14) return@forEach
+            val price = f[0].toDoubleOrNull() ?: return@forEach
+            val prev = f[7].toDoubleOrNull()
+            val code: String
+            val title: String
+            when (symbol) {
+                "hf_CL" -> { code = "WTI"; title = "WTI原油" }
+                "hf_OIL" -> { code = "BRENT"; title = "布伦特原油" }
+                else -> return@forEach
+            }
+            out.add(
+                Indicator(
+                    code = code,
+                    title = title,
+                    value = trimNumber(price),
+                    unit = "美元/桶",
+                    change = prev?.let { round3(price - it) },
+                    asOf = f[12],
+                    precision = "local",
+                    source = "新浪财经"
+                )
+            )
+        }
+        return out
+    }
+
     // ------------------------------------------------------------ 资讯
 
-    /** 华尔街见闻 7x24 快讯。字段：id / content_text / display_time(unix 秒) / uri */
-    fun parseWscn(json: String): List<Article> {
-        val items = JSONObject(json).optJSONObject("data")
-            ?.optJSONArray("items") ?: return emptyList()
+    /**
+     * 解析一页见闻快讯。sinceLabel 之前的条目直接丢弃。
+     */
+    fun parseWscn(json: String, sinceLabel: String): List<Article> {
+        val data = JSONObject(json).optJSONObject("data") ?: return emptyList()
+        val items = data.optJSONArray("items") ?: return emptyList()
         val out = mutableListOf<Article>()
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
@@ -160,74 +169,227 @@ object Sources {
                 item.optString("content")
             }.replace(Regex("<[^>]+>"), "").trim()
             if (text.isEmpty()) continue
-            val id = item.optString("id")
-            val url = item.optString("uri").ifBlank { "https://wallstreetcn.com/livenews/$id" }
             val ts = item.optLong("display_time", 0L)
+            val label = if (ts > 0) formatTs(ts * 1000) else ""
+            if (label.isNotEmpty() && label < sinceLabel) continue
+            val id = item.optString("id")
             out.add(
                 Article(
                     title = text.take(60),
                     summary = text,
                     source = "华尔街见闻",
-                    url = url,
-                    publishedAt = if (ts > 0) formatTime(ts * 1000) else ""
+                    url = item.optString("uri").ifBlank {
+                        "https://wallstreetcn.com/livenews/$id"
+                    },
+                    publishedAt = label
                 )
             )
         }
         return out
     }
 
-    fun fetchWscn(limit: Int = Config.NEWS_LIMIT): List<Article> = parseWscn(
-        Http.get(
-            "https://api-one.wallstcn.com/apiv1/content/lives" +
-                "?channel=global-channel&client=pc&limit=$limit"
-        )
-    )
+    /** 用 cursor 向前翻页，直到翻够页数或整页都超出时间窗。 */
+    fun fetchWscn(sinceLabel: String): List<Article> {
+        val out = mutableListOf<Article>()
+        var cursor: String? = null
+        for (page in 0 until Config.WSCN_PAGES) {
+            val url = buildString {
+                append("https://api-one.wallstcn.com/apiv1/content/lives")
+                append("?channel=global-channel&client=pc&limit=")
+                append(Config.WSCN_PAGE_SIZE)
+                if (cursor != null) append("&cursor=").append(cursor)
+            }
+            val json = try {
+                Http.get(url)
+            } catch (e: Exception) {
+                break
+            }
+            val pageArticles = try {
+                parseWscn(json, sinceLabel)
+            } catch (e: Exception) {
+                break
+            }
+            out += pageArticles
 
-    /** 东方财富资讯。字段：code / showTime / title / url / summary */
+            // 整页都没命中时间窗就说明翻过头了
+            val rawItems = try {
+                JSONObject(json).optJSONObject("data")?.optJSONArray("items")
+            } catch (e: Exception) {
+                null
+            }
+            if (rawItems == null || rawItems.length() == 0) break
+            var oldestTs = Long.MAX_VALUE
+            for (i in 0 until rawItems.length()) {
+                val ts = rawItems.optJSONObject(i)?.optLong("display_time", 0L) ?: 0L
+                if (ts in 1 until oldestTs) oldestTs = ts
+            }
+            if (oldestTs != Long.MAX_VALUE && formatTs(oldestTs * 1000) < sinceLabel) break
+
+            val next = try {
+                JSONObject(json).optJSONObject("data")?.optString("next_cursor")
+            } catch (e: Exception) {
+                null
+            }
+            if (next.isNullOrBlank()) break
+            cursor = next
+        }
+        return out
+    }
+
     fun parseEastmoneyNews(json: String): List<Article> {
-        val list = JSONObject(json).optJSONObject("data")
-            ?.optJSONArray("list") ?: return emptyList()
+        val list = JSONObject(json).optJSONObject("data")?.optJSONArray("list")
+            ?: return emptyList()
         val out = mutableListOf<Article>()
         for (i in 0 until list.length()) {
             val item = list.optJSONObject(i) ?: continue
             val title = item.optString("title").trim()
             if (title.isEmpty()) continue
             val code = item.optString("code")
-            val url = item.optString("url").ifBlank {
-                "https://finance.eastmoney.com/a/$code.html"
-            }
             out.add(
                 Article(
                     title = title,
                     summary = item.optString("summary").trim(),
                     source = "东方财富",
-                    url = url,
-                    publishedAt = item.optString("showTime")
+                    url = item.optString("url").ifBlank {
+                        "https://finance.eastmoney.com/a/$code.html"
+                    },
+                    publishedAt = item.optString("showTime").take(16)
                 )
             )
         }
         return out
     }
 
-    fun fetchEastmoneyNews(pageSize: Int = 30): List<Article> = parseEastmoneyNews(
-        Http.get(
-            "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns" +
+    fun fetchEastmoneyNews(pages: Int = Config.EASTMONEY_NEWS_PAGES): List<Article> {
+        val out = mutableListOf<Article>()
+        for (page in 1..pages) {
+            val url = "https://np-listapi.eastmoney.com/comm/web/getNewsByColumns" +
                 "?client=web&biz=web_news_col&column=350&order=1&needInteractData=0" +
-                "&page_index=1&page_size=$pageSize&req_trace=${System.currentTimeMillis()}" +
+                "&page_index=$page&page_size=${Config.EASTMONEY_NEWS_PAGE_SIZE}" +
+                "&req_trace=${System.currentTimeMillis()}" +
                 "&fields=code,showtime,title,url,summary&types=1,20"
-        )
-    )
+            val json = try {
+                Http.get(url)
+            } catch (e: Exception) {
+                break
+            }
+            val batch = try {
+                parseEastmoneyNews(json)
+            } catch (e: Exception) {
+                break
+            }
+            if (batch.isEmpty()) break
+            out += batch
+        }
+        return out
+    }
 
     // ------------------------------------------------------------ 公告
 
     /**
-     * 巨潮资讯公告。POST 表单，需要 Referer。
-     * 返回 announcements[]，字段 secCode / secName / announcementTitle /
-     * announcementTime(毫秒) / adjunctUrl / announcementType。
+     * 东方财富公告。相比巨潮的优势：直接返回「事项分类」，可精确筛重大事项。
+     * 字段：art_code / codes[].stock_code / codes[].short_name /
+     *       columns[].column_name / notice_date / title
      */
+    fun parseEastmoneyAnnouncements(json: String): List<Announcement> {
+        val list = JSONObject(json).optJSONObject("data")?.optJSONArray("list")
+            ?: return emptyList()
+        val out = mutableListOf<Announcement>()
+        for (i in 0 until list.length()) {
+            val item = list.optJSONObject(i) ?: continue
+            val title = item.optString("title").trim()
+            if (title.isEmpty()) continue
+            val codeObj = item.optJSONArray("codes")?.optJSONObject(0)
+            val code = codeObj?.optString("stock_code") ?: ""
+            val name = codeObj?.optString("short_name") ?: ""
+            val artCode = item.optString("art_code")
+            val cols = item.optJSONArray("columns")
+            val names = mutableListOf<String>()
+            if (cols != null) {
+                for (c in 0 until cols.length()) {
+                    val n = cols.optJSONObject(c)?.optString("column_name") ?: continue
+                    if (n.isNotEmpty()) names.add(n)
+                }
+            }
+            out.add(
+                Announcement(
+                    code = code,
+                    name = name,
+                    title = title,
+                    category = names.joinToString("/"),
+                    url = if (code.isNotEmpty() && artCode.isNotEmpty())
+                        "https://data.eastmoney.com/notices/detail/$code/$artCode.html"
+                    else "",
+                    publishedAt = item.optString("notice_date").take(16)
+                )
+            )
+        }
+        return out
+    }
+
+    fun fetchEastmoneyAnnouncements(pages: Int = Config.ANNOUNCEMENT_PAGES): List<Announcement> {
+        val out = mutableListOf<Announcement>()
+        for (page in 1..pages) {
+            val url = "https://np-anotice-stock.eastmoney.com/api/security/ann" +
+                "?sr=-1&page_size=${Config.ANNOUNCEMENT_PAGE_SIZE}&page_index=$page" +
+                "&ann_type=A&client_source=web&f_node=0&s_node=0"
+            val json = try {
+                Http.get(url)
+            } catch (e: Exception) {
+                break
+            }
+            val batch = try {
+                parseEastmoneyAnnouncements(json)
+            } catch (e: Exception) {
+                break
+            }
+            if (batch.isEmpty()) break
+            out += batch
+        }
+        return out
+    }
+
+    /** 巨潮兜底源（东财失败时用）。没有分类字段，只能按标题筛。 */
+    fun fetchCninfo(pages: Int = 2, pageSize: Int = 30): List<Announcement> {
+        val out = mutableListOf<Announcement>()
+        for (page in 1..pages) {
+            val text = try {
+                Http.postForm(
+                    "https://www.cninfo.com.cn/new/hisAnnouncement/query",
+                    form = mapOf(
+                        "pageNum" to page.toString(),
+                        "pageSize" to pageSize.toString(),
+                        "column" to "szse",
+                        "tabName" to "fulltext",
+                        "plate" to "",
+                        "stock" to "",
+                        "searchkey" to "",
+                        "secDate" to "",
+                        "tdate" to "",
+                        "type" to "",
+                        "isHLtitle" to "true"
+                    ),
+                    headers = mapOf(
+                        "Referer" to "https://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice",
+                        "X-Requested-With" to "XMLHttpRequest"
+                    )
+                )
+            } catch (e: Exception) {
+                break
+            }
+            val batch = try {
+                parseCninfo(text)
+            } catch (e: Exception) {
+                break
+            }
+            if (batch.isEmpty()) break
+            out += batch
+        }
+        return out
+    }
+
     fun parseCninfo(json: String): List<Announcement> {
-        val root = JSONObject(json)
-        val arr = root.opt("announcements") ?: return emptyList()
+        val arr = JSONObject(json).opt("announcements") ?: return emptyList()
         if (arr !is JSONArray) return emptyList()
         val out = mutableListOf<Announcement>()
         for (i in 0 until arr.length()) {
@@ -236,51 +398,17 @@ object Sources {
                 .replace("<em>", "").replace("</em>", "").trim()
             if (title.isEmpty()) continue
             val adjunct = item.optString("adjunctUrl")
-            val url = if (adjunct.isEmpty()) "" else "https://static.cninfo.com.cn/$adjunct"
             val ts = item.optLong("announcementTime", 0L)
             out.add(
                 Announcement(
                     code = item.optString("secCode"),
                     name = item.optString("secName"),
                     title = title,
-                    category = item.optString("announcementType"),
-                    url = url,
-                    publishedAt = if (ts > 0) formatTime(ts) else ""
+                    category = "",
+                    url = if (adjunct.isEmpty()) "" else "https://static.cninfo.com.cn/$adjunct",
+                    publishedAt = if (ts > 0) formatTs(ts) else ""
                 )
             )
-        }
-        return out
-    }
-
-    fun fetchCninfo(
-        pages: Int = Config.ANNOUNCEMENT_PAGES,
-        pageSize: Int = Config.ANNOUNCEMENT_PAGE_SIZE
-    ): List<Announcement> {
-        val out = mutableListOf<Announcement>()
-        for (page in 1..pages) {
-            val text = Http.postForm(
-                "https://www.cninfo.com.cn/new/hisAnnouncement/query",
-                form = mapOf(
-                    "pageNum" to page.toString(),
-                    "pageSize" to pageSize.toString(),
-                    "column" to "szse",
-                    "tabName" to "fulltext",
-                    "plate" to "",
-                    "stock" to "",
-                    "searchkey" to "",
-                    "secDate" to "",
-                    "tdate" to "",
-                    "type" to "",
-                    "isHLtitle" to "true"
-                ),
-                headers = mapOf(
-                    "Referer" to "https://www.cninfo.com.cn/new/commonUrl?url=disclosure/list/notice",
-                    "X-Requested-With" to "XMLHttpRequest"
-                )
-            )
-            val batch = parseCninfo(text)
-            if (batch.isEmpty()) break
-            out += batch
         }
         return out
     }
@@ -298,10 +426,15 @@ object Sources {
         }
     }
 
+    /** 统一时间格式 yyyy-MM-dd HH:mm，这样字符串比较等价于时间比较。 */
     @SuppressLint("SimpleDateFormat")
-    private fun formatTime(millis: Long): String =
-        SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(millis))
+    fun formatTs(millis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.CHINA).format(Date(millis))
 
     @SuppressLint("SimpleDateFormat")
     fun today(): String = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date())
+
+    /** N 天前的时间标签，用于时间窗过滤 */
+    fun sinceLabel(days: Int): String =
+        formatTs(System.currentTimeMillis() - days * 24L * 3600L * 1000L)
 }
