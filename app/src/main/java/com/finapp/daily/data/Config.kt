@@ -33,7 +33,7 @@ object Config {
     const val EASTMONEY_NEWS_PAGE_SIZE = 50
 
     /** 华尔街见闻 7x24：翻几页、每页多少条 */
-    const val WSCN_PAGES = 4
+    const val WSCN_PAGES = 8
     const val WSCN_PAGE_SIZE = 100
 
     /** 公告：抓几页、每页多少条 */
