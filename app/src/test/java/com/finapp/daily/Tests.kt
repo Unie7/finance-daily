@@ -398,3 +398,34 @@ class KeywordPrecisionTest {
         assertTrue(Keywords.classify("欧洲央行认为能源价格出现积极迹象", "").isEmpty())
     }
 }
+class KeywordTighteningTest {
+
+    @Test
+    fun `中国国债收益率不该算美债`() {
+        assertTrue(Keywords.classify("中国10年期国债收益率下行至2.1%", "").isEmpty())
+        // 但美国国债收益率要能识别
+        assertTrue(Keywords.classify("美国10年期国债收益率升至4.88%", "").contains("美债"))
+        assertTrue(Keywords.classify("美债收益率曲线倒挂加深", "").contains("美债"))
+    }
+
+    @Test
+    fun `降准和LPR不该算美元加息`() {
+        assertTrue(Keywords.classify("央行宣布全面降准0.5个百分点", "").isEmpty())
+        assertTrue(Keywords.classify("11月LPR报价出炉，5年期维持不变", "").isEmpty())
+        // 美联储相关的仍要识别
+        assertTrue(Keywords.classify("美联储宣布降息25个基点", "").contains("加息"))
+    }
+
+    @Test
+    fun `泛泛的货币政策不算，要带美国或美联储`() {
+        assertTrue(Keywords.classify("日本央行调整货币政策框架", "").isEmpty())
+        assertTrue(Keywords.classify("美联储货币政策路径存在分歧", "").contains("加息"))
+        assertTrue(Keywords.classify("美国货币政策转向在即", "").contains("加息"))
+    }
+
+    @Test
+    fun `人民币汇率要带限定说法`() {
+        assertTrue(Keywords.classify("人民币汇率中间价今日上调120点", "").contains("美元"))
+        assertTrue(Keywords.classify("离岸人民币兑美元升破7.1", "").contains("美元"))
+    }
+}
