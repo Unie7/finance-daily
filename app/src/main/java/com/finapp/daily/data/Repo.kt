@@ -44,6 +44,11 @@ class Repo(context: Context) {
             .onFailure { problems.add("见闻快讯失败（${it.message}）") }
         runCatching { raw += Sources.fetchEastmoneyNews() }
             .onFailure { problems.add("东财资讯失败（${it.message}）") }
+        runCatching {
+            val cls = Cailianpress.fetch()
+            if (cls.isEmpty()) problems.add("财联社无数据")
+            raw += cls
+        }.onFailure { problems.add("财联社失败（${it.message}）") }
 
         val pool = raw
             .filter { it.url.isNotBlank() && it.title.isNotBlank() }
