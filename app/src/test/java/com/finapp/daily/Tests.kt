@@ -376,3 +376,25 @@ class LeadLineTest {
         assertEquals("", Sources.leadLine(""))
     }
 }
+class KeywordPrecisionTest {
+
+    @Test
+    fun `裸的减产不该算原油`() {
+        // 真实案例：短剧团队"主动减产"曾被判成原油，相关度 18
+        val title = "【探访AI短剧创作一线：《持械入宋》爆红后，团队为何主动减产？】"
+        val body = "【探访AI短剧创作一线：《持械入宋》爆红后，团队为何主动减产？】" +
+            "《持械入宋》创作团队共有30多名成员，但直接参与制作的主创只有6人。"
+        assertTrue(Keywords.classify(title, body).isEmpty())
+    }
+
+    @Test
+    fun `组合词减产仍能识别石油减产`() {
+        assertTrue(Keywords.classify("OPEC达成减产协议，国际油价应声上涨", "").contains("原油"))
+        assertTrue(Keywords.classify("原油减产预期升温", "").contains("原油"))
+    }
+
+    @Test
+    fun `能源价格不该算原油`() {
+        assertTrue(Keywords.classify("欧洲央行认为能源价格出现积极迹象", "").isEmpty())
+    }
+}
