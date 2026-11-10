@@ -116,8 +116,11 @@ class Repo(context: Context) {
 
     fun indicators(): List<Indicator> = db.loadIndicators()
 
-    fun articles(topic: String? = null, byRelevance: Boolean = false): List<Article> =
-        db.loadArticles(topic, byRelevance = byRelevance)
+    fun articles(
+        topic: String? = null,
+        byRelevance: Boolean = false,
+        minScore: Int = 0
+    ): List<Article> = db.loadArticles(topic, byRelevance = byRelevance, minScore = minScore)
 
     fun announcements(category: String? = null, code: String? = null): List<Announcement> =
         db.loadAnnouncements(category = category, code = code)
