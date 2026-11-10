@@ -26,7 +26,11 @@ data class Article(
     /** 命中的主题：美债 / 美元 / 加息 / 原油，逗号分隔 */
     val topics: String = "",
     /** 相关度分数，越大越相关。用于「按相关度」排序 */
-    val score: Int = 0
+    val score: Int = 0,
+    /** 是否已收藏 */
+    val favorite: Boolean = false,
+    /** 收藏时间，用于收藏页排序 */
+    val favoriteAt: Long = 0L
 )
 
 /** 一条上市公司公告 */
@@ -37,7 +41,10 @@ data class Announcement(
     val title: String,
     val category: String,
     val url: String,
-    val publishedAt: String
+    val publishedAt: String,
+    /** 是否已收藏 */
+    val favorite: Boolean = false,
+    val favoriteAt: Long = 0L
 )
 
 /** 一次抓取的结果 */
