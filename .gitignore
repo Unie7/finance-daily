@@ -1,0 +1,20 @@
+# 忽略
+.token.txt
+local.properties
+
+# 工具链（本地开发用，不进仓库）
+toolchain/
+
+# 构建产物
+build/
+.gradle/
+.idea/
+*.iml
+*.apk
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+
+# 注意：data/ 必须入库，Action 每天提交最新数据，jsDelivr 从仓库读取

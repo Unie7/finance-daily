@@ -1,0 +1,83 @@
+{
+  "errors": {},
+  "generated_at": "2026-11-10T04:57:51Z",
+  "indicators": {
+    "BRENT": {
+      "as_of": "2026-11-10",
+      "change": -0.95,
+      "title": "布伦特原油",
+      "unit": "美元/桶",
+      "value": 91.62
+    },
+    "DXY": {
+      "as_of": "2026-11-09",
+      "change": null,
+      "title": "美元指数",
+      "unit": "",
+      "value": 101.535
+    },
+    "EFFR": {
+      "as_of": "2026-11-06",
+      "change": null,
+      "title": "有效联邦基金利率",
+      "unit": "%",
+      "value": 3.88
+    },
+    "FED_TARGET": {
+      "as_of": "2026-11-06",
+      "change": null,
+      "high": 4.0,
+      "low": 3.75,
+      "title": "美联储目标利率区间",
+      "unit": "%",
+      "value": "3.75-4.00"
+    },
+    "US10Y": {
+      "as_of": "2026-11-09",
+      "change": 0.02,
+      "title": "美债10年期",
+      "unit": "%",
+      "value": 4.88
+    },
+    "US2Y": {
+      "as_of": "2026-11-09",
+      "change": 0.05,
+      "title": "美债2年期",
+      "unit": "%",
+      "value": 4.56
+    },
+    "US30Y": {
+      "as_of": "2026-11-09",
+      "change": 0.0,
+      "title": "美债30年期",
+      "unit": "%",
+      "value": 5.26
+    },
+    "US3M": {
+      "as_of": "2026-11-09",
+      "change": 0.05,
+      "title": "美债3月期",
+      "unit": "%",
+      "value": 4.24
+    },
+    "US5Y": {
+      "as_of": "2026-11-09",
+      "change": 0.03,
+      "title": "美债5年期",
+      "unit": "%",
+      "value": 4.67
+    },
+    "WTI": {
+      "as_of": "2026-11-09",
+      "change": -1.04,
+      "title": "WTI原油",
+      "unit": "美元/桶",
+      "value": 85.81
+    }
+  },
+  "sources": {
+    "nyfed": "Federal Reserve Bank of New York",
+    "quotes": "CNBC",
+    "treasury": "U.S. Treasury"
+  }
+}
