@@ -159,6 +159,19 @@ object Sources {
     /**
      * 解析一页见闻快讯。sinceLabel 之前的条目直接丢弃。
      */
+    /**
+     * 取正文的"首行"当标题。
+     *
+     * 见闻快讯经常是「一句话标题 + 空行 + 补充说明」的结构。
+     * 以前直接 `text.take(60)`，短标题会被后面的补充段落填满，
+     * 于是"标题"里混进了第二段的内容——判断相关性时就会误命中
+     * （实例：「法国GDP…」+ 第二段「认为能源价格出现积极迹象」被判成原油）。
+     */
+    fun leadLine(text: String): String {
+        val first = text.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        return (if (first.isNotEmpty()) first else text.trim()).take(60)
+    }
+
     fun parseWscn(json: String, sinceLabel: String): List<Article> {
         val data = JSONObject(json).optJSONObject("data") ?: return emptyList()
         val items = data.optJSONArray("items") ?: return emptyList()
@@ -175,7 +188,7 @@ object Sources {
             val id = item.optString("id")
             out.add(
                 Article(
-                    title = text.take(60),
+                    title = leadLine(text),
                     summary = text,
                     source = "华尔街见闻",
                     url = item.optString("uri").ifBlank {
