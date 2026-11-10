@@ -44,11 +44,12 @@ class Repo(context: Context) {
             .onFailure { problems.add("见闻快讯失败（${it.message}）") }
         runCatching { raw += Sources.fetchEastmoneyNews() }
             .onFailure { problems.add("东财资讯失败（${it.message}）") }
-        runCatching {
-            val cls = Cailianpress.fetch()
-            if (cls.isEmpty()) problems.add("财联社无数据")
-            raw += cls
-        }.onFailure { problems.add("财联社失败（${it.message}）") }
+        // 财联社已移除：实测连续多轮 32 条抓取、0 条命中四主题
+        // （它的首页聚合以 A 股个股和券商观点为主），接入只增加刷新耗时。
+        // 实现保留在 Cailianpress.kt，日后若找到宏观频道再加回来。
+        if (false) {
+            runCatching { raw += Cailianpress.fetch() }
+        }
 
         val pool = raw
             .filter { it.url.isNotBlank() && it.title.isNotBlank() }
@@ -95,8 +96,9 @@ class Repo(context: Context) {
         val indicatorList = indicators.values.toList()
         db.upsertIndicators(indicatorList)
         db.insertArticles(articles)
-        // 顺手清掉历史残留：按当前规则不再命中的旧条目（收藏的除外）
-        db.purgeNoTopicArticles()
+        // 全量重算：把库里所有已存条目按**当前规则**重新打标签，
+        // 再删掉重算后不再命中任何主题的（收藏的除外）。
+        reclassifyStoredArticles()
         db.insertAnnouncements(announcements)
 
         val counts = db.counts()
@@ -172,6 +174,27 @@ class Repo(context: Context) {
         val ts = db.lastUpdatedAt()
         if (ts <= 0) return null
         return Sources.formatTs(ts)
+    }
+
+    // ------------------------------------------------------------ 全量重算
+
+    /**
+     * 按当前过滤规则重算库里所有资讯的 topics / score，并清理不再命中的。
+     * 每次刷新都跑一遍，保证标签规则升级后老数据能跟上。
+     */
+    private fun reclassifyStoredArticles() {
+        for (a in db.loadAllArticlesForReclassify()) {
+            val topics = Keywords.classify(a.title, a.summary).toMutableList()
+            if (Keywords.isBloomberg(a.title + " " + a.summary)) {
+                topics.add(0, PSEUDO_BLOOMBERG)
+            }
+            val newTopics = topics.joinToString(",")
+            val newScore = Keywords.relevance(a.title, a.summary)
+            if (newTopics != a.topics || newScore != a.score) {
+                db.updateArticleTopics(a.url, newTopics, newScore)
+            }
+        }
+        db.purgeNoTopicArticles()
     }
 
     // ------------------------------------------------------------ 资讯提取
