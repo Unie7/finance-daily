@@ -11,13 +11,24 @@ object Config {
     private const val REPO = "Unie7/finance-daily"
     private const val PATH = "data/latest.json@main"
 
-    /** 云端 JSON 的多个入口，按顺序尝试，谁先通用谁 */
+    /**
+     * 云端 JSON 的多个入口，按实测可达性排序（国内网络实测结果）：
+     *   fastly / gcore / testingcf  ✅ 200
+     *   ghproxy.net / gh-proxy.com  ✅ 200
+     *   cdn.jsdelivr.net            ❌ 国内不通（放最后，避免每次先等它超时）
+     * 每个只等 [CLOUD_TIMEOUT_MS]，6 个全失败也控制在 20 秒左右。
+     */
     val CLOUD_MIRRORS = listOf(
-        "https://cdn.jsdelivr.net/gh/$REPO/$PATH",
         "https://fastly.jsdelivr.net/gh/$REPO/$PATH",
         "https://gcore.jsdelivr.net/gh/$REPO/$PATH",
-        "https://testingcf.jsdelivr.net/gh/$REPO/$PATH"
+        "https://testingcf.jsdelivr.net/gh/$REPO/$PATH",
+        "https://ghproxy.net/https://raw.githubusercontent.com/$REPO@main/data/latest.json",
+        "https://gh-proxy.com/https://raw.githubusercontent.com/$REPO@main/data/latest.json",
+        "https://cdn.jsdelivr.net/gh/$REPO/$PATH"
     )
+
+    /** 单个镜像的超时，短一点才能快速换下一个 */
+    const val CLOUD_TIMEOUT_MS = 6000
 
     /** 调试用：非 null 时只打这个地址（模拟器访问宿主机用 10.0.2.2） */
     val DEBUG_CLOUD_URL: String? = null
