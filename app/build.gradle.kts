@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,8 +14,25 @@ android {
         applicationId = "com.finapp.daily"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.2.0"
+    }
+
+    // 固定签名密钥。有了它，后续版本可以直接覆盖安装，不用卸载重装。
+    // keystore.properties 和 keystore/ 都不入库（见 .gitignore）。
+    val keystorePropsFile = rootProject.file("keystore.properties")
+    if (keystorePropsFile.exists()) {
+        val ksProps = Properties().apply {
+            keystorePropsFile.inputStream().use { load(it) }
+        }
+        signingConfigs {
+            create("release") {
+                storeFile = rootProject.file(ksProps.getProperty("storeFile"))
+                storePassword = ksProps.getProperty("storePassword")
+                keyAlias = ksProps.getProperty("keyAlias")
+                keyPassword = ksProps.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -23,6 +42,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystorePropsFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -44,7 +66,6 @@ kotlin {
 
 // 注意：Compose BOM 2026.05 及以后（Compose 1.11+）要求 compileSdk 37 + AGP 9.1，
 // 本项目锁定 compileSdk 36，所以选用 2026.03.01（Compose 1.10.6）。
-// 若要升级 Compose，必须同时升级 AGP 与 compileSdk，别只改这一行。
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.03.01")
     implementation(composeBom)
@@ -55,8 +76,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // 单元测试跑在 JVM 上，需要一份真实的 org.json 实现
-    // （Android 自带的 org.json 在 JVM 测试里只是抛异常的桩）
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
