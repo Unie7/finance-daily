@@ -46,21 +46,54 @@ object Keywords {
         )
     )
 
+    /** 首段长度上限。太长了就等于全文匹配，噪音会回来。 */
+    private const val FIRST_PARA_MAX = 100
+
+    /** 取正文首段：截到第一个换行，或前 FIRST_PARA_MAX 个字符，取更短的那个。 */
+    fun firstParagraph(body: String): String {
+        if (body.isBlank()) return ""
+        val cut = body.indexOfFirst { it == '\n' || it == '。' }
+        val head = if (cut in 1 until FIRST_PARA_MAX) body.substring(0, cut) else body.take(FIRST_PARA_MAX)
+        return head.trim()
+    }
+
     /**
-     * 只认**标题**命中。正文一律不参与判断。
+     * 命中判定：**标题 或 首段**命中即算。
      *
-     * 为什么这么严：早先用「正文命中 3 个不同词也算」的规则，结果长文章的正文里
-     * 凑巧凑够 3 个相关词就被放进来，出现过「AI短剧」这种完全不相关的条目被标成原油。
-     * 用户要求高度相关，所以砍掉正文判断，宁缺毋滥。
-     *
-     * body 参数保留只是为了调用方不用改，实际不参与计算。
+     * 历史：最早是"命中任一关键词就算"（太松）→ 改成"标题必中"（漏得多）→
+     * 现在折中为"标题或首段"。首段限长 100 字，避免长文章正文里的偶然提及混进来。
      */
     fun classify(title: String, body: String): List<String> {
-        if (title.isBlank()) return emptyList()
         val t = title.lowercase()
+        val p = firstParagraph(body).lowercase()
+        if (t.isBlank() && p.isBlank()) return emptyList()
         return RULES.entries
-            .filter { (_, words) -> words.any { t.contains(it) } }
+            .filter { (_, words) -> words.any { t.contains(it) || p.contains(it) } }
             .map { it.key }
+    }
+
+    /**
+     * 相关度打分，用于「按相关度」排序。规则：
+     *   标题命中每个词 +10（最可信）
+     *   首段命中每个词 +3
+     *   命中主题数 +5/个
+     *   彭博转载 +8
+     */
+    fun relevance(title: String, body: String): Int {
+        val t = title.lowercase()
+        val p = firstParagraph(body).lowercase()
+        var score = 0
+        var topics = 0
+        for ((_, words) in RULES) {
+            val titleHits = words.count { t.contains(it) }
+            val paraHits = words.count { p.contains(it) }
+            if (titleHits > 0 || paraHits > 0) topics++
+            score += titleHits * 10
+            score += paraHits * 3
+        }
+        score += topics * 5
+        if (isBloomberg(title + " " + body)) score += 8
+        return score
     }
 
 // ------------------------------------------------------------------ 彭博
