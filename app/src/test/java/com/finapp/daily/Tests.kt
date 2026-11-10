@@ -166,14 +166,28 @@ class KeywordsTest {
     }
 
     @Test
-    fun `只认标题，正文提再多次也不算`() {
-        // 曾经的规则是"正文命中 3 个不同词也收"，结果长文章正文凑巧带出相关词，
-        // 出现过「AI短剧」被标成原油这种事。现在正文完全不参与判断。
+    fun `首段命中也算相关`() {
         val topics = Keywords.classify(
             "隔夜市场综述",
             "美元指数走强，美元兑人民币走高，分析师认为强势美元将延续。"
         )
-        assertTrue(topics.isEmpty())
+        assertTrue(topics.contains("美元"))
+    }
+
+    @Test
+    fun `首段之后的正文提及不算`() {
+        // 关键词出现在首段之后（长文章后半段），不该被当成相关
+        val body = "【探访AI短剧创作一线】".padEnd(120, ' ') +
+            "该剧组表示，近期原油价格波动对拍摄成本没有影响。"
+        assertTrue(Keywords.classify("探访AI短剧创作一线", body).isEmpty())
+    }
+
+    @Test
+    fun `相关度打分：标题命中高于首段命中`() {
+        val titleHit = Keywords.relevance("美债收益率上行", "")
+        val paraHit = Keywords.relevance("某综述", "美债收益率上行和其他内容。")
+        assertTrue(titleHit > paraHit)
+        assertEquals(0, Keywords.relevance("无关话题", "无关内容"))
     }
 
     @Test
