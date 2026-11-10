@@ -125,6 +125,14 @@ private fun Header(state: AppState, onClear: () -> Unit) {
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
         )
     }
+    if (state.sourceStats.isNotEmpty()) {
+        Text(
+            "源：" + state.sourceStats.joinToString(" · ") { "${it.name} ${it.fetched}→${it.kept}" },
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 1.dp)
+        )
+    }
     state.errorDetail?.let {
         Text(
             "⚠ $it",
