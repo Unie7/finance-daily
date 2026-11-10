@@ -124,6 +124,34 @@ class AppState(private val context: Context) {
         }
     }
 
+    /** 清理 N 天之前的内容 */
+    fun clearOlderThan(days: Int) {
+        executor.execute {
+            val removed = repo.clearOlderThan(days)
+            val art = repo.articles(topicFilter)
+            val ann = repo.announcements()
+            main.post {
+                articles = art
+                announcements = ann
+                statusText = "已清理 $days 天前的内容，共 $removed 条"
+            }
+        }
+    }
+
+    /** 清空全部资讯和公告 */
+    fun clearAll() {
+        executor.execute {
+            val removed = repo.clearAllContent()
+            val art = repo.articles(topicFilter)
+            val ann = repo.announcements()
+            main.post {
+                articles = art
+                announcements = ann
+                statusText = "已清空全部内容，共 $removed 条"
+            }
+        }
+    }
+
     fun shutdown() {
         executor.shutdown()
     }
