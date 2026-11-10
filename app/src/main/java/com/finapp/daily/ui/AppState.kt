@@ -43,6 +43,10 @@ class AppState(private val context: Context) {
     var errorDetail by mutableStateOf<String?>(null)
         private set
 
+    /** 每个资讯源本轮抓取/保留条数，用于解释"为什么没有某家的内容" */
+    var sourceStats by mutableStateOf<List<com.finapp.daily.data.SourceStat>>(emptyList())
+        private set
+
     var topicFilter by mutableStateOf<String?>(null)
         private set
 
@@ -179,6 +183,7 @@ class AppState(private val context: Context) {
                 favoriteAnnouncements = fn
                 refreshing = false
                 errorDetail = result.error
+                sourceStats = result.stats
                 statusText = when {
                     result.isEmpty -> "没有取到任何数据"
                     result.error != null ->
