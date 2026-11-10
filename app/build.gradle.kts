@@ -14,8 +14,8 @@ android {
         applicationId = "com.finapp.daily"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.7.0"
+        versionCode = 10
+        versionName = "0.7.1"
     }
 
     // 固定签名密钥。有了它，后续版本可以直接覆盖安装，不用卸载重装。
