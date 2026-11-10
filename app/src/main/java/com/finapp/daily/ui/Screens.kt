@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.finapp.daily.data.Announcement
 import com.finapp.daily.data.Article
+import com.finapp.daily.data.Config
 import com.finapp.daily.data.Indicator
 import com.finapp.daily.data.Repo
 
@@ -61,10 +62,11 @@ private val Down = Color(0xFF2E7D32)
 fun FinanceApp(state: AppState) {
     var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("概览", "资讯", "公告")
+    var showClear by remember { mutableStateOf(false) }
 
     Scaffold { innerPadding ->
         Column(Modifier.padding(innerPadding).fillMaxSize()) {
-            Header(state)
+            Header(state, onClear = { showClear = true })
             TabRow(selectedTabIndex = tab) {
                 tabs.forEachIndexed { index, title ->
                     Tab(
@@ -81,10 +83,14 @@ fun FinanceApp(state: AppState) {
             }
         }
     }
+
+    if (showClear) {
+        ClearDialog(state) { showClear = false }
+    }
 }
 
 @Composable
-private fun Header(state: AppState) {
+private fun Header(state: AppState, onClear: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -92,7 +98,7 @@ private fun Header(state: AppState) {
         Column(Modifier.weight(1f)) {
             Text("财经每日", fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Text(
-                state.lastUpdated?.let { "更新于 $it" } ?: "尚未更新",
+                (state.lastUpdated?.let { "更新于 $it" } ?: "尚未更新") + "  v" + Config.VERSION_NAME,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -102,6 +108,7 @@ private fun Header(state: AppState) {
         } else {
             TextButton(onClick = { state.refresh() }) { Text("刷新") }
         }
+        TextButton(onClick = onClear) { Text("清理") }
     }
     state.statusText?.let {
         Text(
@@ -406,6 +413,40 @@ private fun AnnouncementRow(ann: Announcement) {
             }
         }
     }
+}
+
+@Composable
+private fun ClearDialog(state: AppState, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("清理本地数据", fontSize = 16.sp) },
+        text = {
+            Text(
+                "资讯和公告都存在手机本地，默认保留 ${Config.RETENTION_DAYS} 天，超期会自动清理。" +
+                    "也可以现在手动清理，腾出空间。",
+                fontSize = 13.sp,
+                lineHeight = 20.sp
+            )
+        },
+        confirmButton = {
+            Row {
+                TextButton(onClick = { state.clearOlderThan(7); onDismiss() }) {
+                    Text("清理7天前", fontSize = 13.sp)
+                }
+                TextButton(onClick = { state.clearOlderThan(30); onDismiss() }) {
+                    Text("清理30天前", fontSize = 13.sp)
+                }
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { state.clearAll(); onDismiss() }) {
+                    Text("全部清空", fontSize = 13.sp)
+                }
+                TextButton(onClick = onDismiss) { Text("取消", fontSize = 13.sp) }
+            }
+        }
+    )
 }
 
 // ------------------------------------------------------------------ 通用
