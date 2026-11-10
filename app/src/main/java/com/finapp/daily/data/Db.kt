@@ -17,7 +17,7 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
 
     companion object {
         private const val NAME = "finance.db"
-        private const val VERSION = 2
+        private const val VERSION = 3
         const val RETENTION_DAYS = 90
     }
 
@@ -56,6 +56,7 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                 summary TEXT,
                 source TEXT,
                 topics TEXT,
+                score INTEGER NOT NULL DEFAULT 0,
                 published_at TEXT,
                 fetched_at INTEGER
             )
@@ -184,6 +185,7 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                     put("summary", item.summary)
                     put("source", item.source)
                     put("topics", item.topics)
+                    put("score", item.score)
                     put("published_at", item.publishedAt)
                     put("fetched_at", now)
                 }
@@ -197,12 +199,21 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         return inserted
     }
 
-    fun loadArticles(topic: String? = null, limit: Int = 200): List<Article> {
+    /**
+     * @param byRelevance true 则按相关度降序，否则按时间降序
+     */
+    fun loadArticles(
+        topic: String? = null,
+        limit: Int = 300,
+        byRelevance: Boolean = false
+    ): List<Article> {
         val where = if (topic.isNullOrEmpty() || topic == "全部") "" else "WHERE topics LIKE ?"
         val args = if (where.isEmpty()) null else arrayOf("%$topic%")
+        val order = if (byRelevance) "score DESC, published_at DESC" else "published_at DESC"
         val out = mutableListOf<Article>()
         readableDatabase.rawQuery(
-            "SELECT id,title,summary,source,url,published_at,topics FROM article $where ORDER BY published_at DESC LIMIT ?",
+            "SELECT id,title,summary,source,url,published_at,topics,score FROM article $where " +
+                "ORDER BY $order LIMIT ?",
             (args ?: emptyArray()) + limit.toString()
         ).use { c ->
             while (c.moveToNext()) {
@@ -214,7 +225,8 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
                         source = c.getString(3) ?: "",
                         url = c.getString(4),
                         publishedAt = c.getString(5) ?: "",
-                        topics = c.getString(6) ?: ""
+                        topics = c.getString(6) ?: "",
+                        score = c.getInt(7)
                     )
                 )
             }
