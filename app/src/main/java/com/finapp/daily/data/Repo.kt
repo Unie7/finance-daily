@@ -1,18 +1,9 @@
 package com.finapp.daily.data
 
 import android.content.Context
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
- * 刷新编排层。核心是三级降级：
- *
- *   指标：云端 JSON  →  境内直连（东财/新浪）  →  从资讯正文提取数字
- *   资讯：华尔街见闻 + 东财，按四主题过滤，不命中的丢弃
- *   公告：巨潮，按「重大事项」关键词过滤
- *
- * 每次刷新结束都会生成当日综述并清理 90 天前数据。
+ * 刷新编排层。指标三级降级，资讯走精确过滤 + 时间窗，公告按事项分类筛。
  */
 class Repo(context: Context) {
 
@@ -22,45 +13,56 @@ class Repo(context: Context) {
     fun refresh(): RefreshResult {
         val problems = mutableListOf<String>()
 
-        // ---------------- 1. 指标：云端优先 ----------------
+        // ---------------- 1. 指标：云端多镜像 ----------------
         val indicators = mutableMapOf<String, Indicator>()
         try {
             Sources.fetchCloud().forEach { indicators[it.code] = it }
         } catch (e: Exception) {
-            problems.add("云端数据不可用")
+            problems.add("云端指标不可用（${e.message}）")
         }
 
         // ---------------- 2. 境内直连补缺 ----------------
-        if (!indicators.containsKey("DXY") ||
-            !indicators.containsKey("WTI") ||
-            !indicators.containsKey("BRENT")
-        ) {
-            runCatching { Sources.fetchDomesticQuotes() }.getOrElse { emptyList() }
-                .forEach { indicators.putIfAbsent(it.code, it) }
+        if (listOf("DXY", "WTI", "BRENT").any { !indicators.containsKey(it) }) {
+            runCatching { Sources.fetchDomesticQuotes() }.getOrNull()
+                ?.forEach { indicators.putIfAbsent(it.code, it) }
         }
 
-        // ---------------- 3. 资讯 ----------------
-        val rawArticles = mutableListOf<Article>()
-        runCatching { rawArticles += Sources.fetchWscn() }
-            .onFailure { problems.add("华尔街见闻失败") }
-        runCatching { rawArticles += Sources.fetchEastmoneyNews() }
-            .onFailure { problems.add("东财资讯失败") }
+        // ---------------- 3. 资讯：多页 + 时间窗 + 精确过滤 ----------------
+        val since = Sources.sinceLabel(Config.NEWS_DAYS)
+        val raw = mutableListOf<Article>()
 
-        val filtered = rawArticles
+        runCatching { raw += Sources.fetchEastmoneyNews() }
+            .onFailure { problems.add("东财资讯失败（${it.message}）") }
+        runCatching { raw += Sources.fetchWscn(since) }
+            .onFailure { problems.add("见闻快讯失败（${it.message}）") }
+
+        val filtered = raw
             .filter { it.url.isNotBlank() && it.title.isNotBlank() }
+            .filter { it.publishedAt.isEmpty() || it.publishedAt >= since }
             .distinctBy { it.url }
             .mapNotNull { article ->
-                val topics = Keywords.classify(article.title + " " + article.summary)
-                if (topics.isEmpty()) null else article.copy(topics = topics.joinToString(","))
+                val topics = Keywords.classify(article.title, article.summary)
+                if (topics.isEmpty()) null
+                else article.copy(topics = topics.joinToString(","))
             }
+            .sortedByDescending { it.publishedAt }
 
-        // ---------------- 4. 公告（只留重大事项）----------------
-        val announcements = runCatching { Sources.fetchCninfo() }
-            .getOrElse {
-                problems.add("巨潮公告失败")
-                emptyList()
+        // ---------------- 4. 公告：东财分类筛，失败退回巨潮 ----------------
+        var announcements: List<Announcement> = emptyList()
+        try {
+            announcements = Sources.fetchEastmoneyAnnouncements()
+                .filter { Keywords.isMajorAnnouncement(it.category, it.title) }
+        } catch (e: Exception) {
+            problems.add("东财公告失败（${e.message}）")
+        }
+        if (announcements.isEmpty()) {
+            try {
+                announcements = Sources.fetchCninfo()
+                    .filter { Keywords.isMajorAnnouncement(it.title) }
+            } catch (e: Exception) {
+                problems.add("巨潮公告失败（${e.message}）")
             }
-            .filter { Keywords.isMajorAnnouncement(it.title) }
+        }
 
         // ---------------- 5. 指标仍缺 → 资讯提取 ----------------
         val missing = EXPECTED_CODES.filter { !indicators.containsKey(it) }
@@ -69,21 +71,21 @@ class Repo(context: Context) {
         }
 
         // ---------------- 6. 落库 ----------------
-        val sortedIndicators = indicators.values.toList()
-        db.upsertIndicators(sortedIndicators)
+        val indicatorList = indicators.values.toList()
+        db.upsertIndicators(indicatorList)
         db.insertArticles(filtered)
         db.insertAnnouncements(announcements)
 
-        // ---------------- 7. 当日综述 ----------------
+        // ---------------- 7. 综述 ----------------
         val counts = db.counts()
         db.saveDigest(
             Sources.today(),
-            Digest.build(sortedIndicators, counts.second, counts.third, missing)
+            Digest.build(indicatorList, counts.second, counts.third, missing)
         )
         db.sweep()
 
         return RefreshResult(
-            indicatorCount = sortedIndicators.size,
+            indicatorCount = indicatorList.size,
             articleCount = filtered.size,
             announcementCount = announcements.size,
             error = problems.takeIf { it.isNotEmpty() }?.joinToString("；")
@@ -102,22 +104,16 @@ class Repo(context: Context) {
 
     fun counts(): Triple<Int, Int, Int> = db.counts()
 
-    /** 上次更新时间（毫秒）。0 表示从没更新过。 */
     fun lastUpdatedMillis(): Long = db.lastUpdatedAt()
 
-    @Suppress("SimpleDateFormat")
     fun lastUpdated(): String? {
         val ts = db.lastUpdatedAt()
         if (ts <= 0) return null
-        return SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(ts))
+        return Sources.formatTs(ts)
     }
 
     // ------------------------------------------------------------ 资讯提取
 
-    /**
-     * 从资讯正文里抠数字填指标。这是最低档的兜底，precision 标记为 "news"，
-     * 界面必须显示「资讯提取」角标（用户明确要求）。
-     */
     private fun extractFromNews(
         articles: List<Article>,
         missing: List<String>
@@ -127,8 +123,7 @@ class Repo(context: Context) {
 
         for (article in articles) {
             val text = article.title + " " + article.summary
-            val numbers = Keywords.extractNumbers(text)
-            for (n in numbers) {
+            for (n in Keywords.extractNumbers(text)) {
                 val code = when {
                     n.text.contains("10年") || n.text.contains("十年") -> "US10Y"
                     n.text.contains("2年") || n.text.contains("两年") -> "US2Y"
@@ -142,7 +137,11 @@ class Repo(context: Context) {
                     code = code,
                     title = TITLES[code] ?: code,
                     value = Sources.trimNumber(n.value),
-                    unit = if (code == "DXY") "" else if (code == "WTI") "美元/桶" else "%",
+                    unit = when (code) {
+                        "DXY" -> ""
+                        "WTI" -> "美元/桶"
+                        else -> "%"
+                    },
                     change = null,
                     asOf = article.publishedAt.take(10),
                     precision = "news",
@@ -154,7 +153,8 @@ class Repo(context: Context) {
     }
 
     companion object {
-        val EXPECTED_CODES = listOf("US10Y", "US2Y", "US30Y", "FED_TARGET", "DXY", "WTI", "BRENT")
+        val EXPECTED_CODES =
+            listOf("US10Y", "US2Y", "US30Y", "FED_TARGET", "DXY", "WTI", "BRENT")
 
         val TITLES = mapOf(
             "US10Y" to "美债10年期",
