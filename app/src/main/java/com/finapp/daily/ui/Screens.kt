@@ -270,6 +270,29 @@ private fun NewsScreen(state: AppState) {
                 )
             }
         }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("排序", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FilterChip(
+                selected = !state.sortByRelevance,
+                onClick = { state.setSort(false) },
+                label = { Text("最新", fontSize = 12.sp) }
+            )
+            FilterChip(
+                selected = state.sortByRelevance,
+                onClick = { state.setSort(true) },
+                label = { Text("相关度", fontSize = 12.sp) }
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "共 ${state.articles.size} 条",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         if (state.articles.isEmpty()) {
             EmptyHint(
                 "近 ${Config.NEWS_DAYS} 天没有符合条件的资讯。\n" +
@@ -356,7 +379,7 @@ private fun ArticleDetailDialog(article: Article, onDismiss: () -> Unit) {
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "${article.source} · ${article.publishedAt}",
+                    "${article.source} · ${article.publishedAt} · 相关度 ${article.score}",
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
