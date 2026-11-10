@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -66,7 +67,7 @@ private val Down = Color(0xFF2E7D32)
 @Composable
 fun FinanceApp(state: AppState) {
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("概览", "资讯", "公告")
+    val tabs = listOf("概览", "资讯", "公告", "收藏")
     var showClear by remember { mutableStateOf(false) }
 
     Scaffold { innerPadding ->
@@ -77,14 +78,15 @@ fun FinanceApp(state: AppState) {
                     Tab(
                         selected = tab == index,
                         onClick = { tab = index },
-                        text = { Text(title, fontSize = 15.sp) }
+                        text = { Text(title, fontSize = 14.sp) }
                     )
                 }
             }
             when (tab) {
                 0 -> OverviewScreen(state)
                 1 -> NewsScreen(state)
-                else -> AnnouncementScreen(state)
+                2 -> AnnouncementScreen(state)
+                else -> FavoritesScreen(state)
             }
         }
     }
@@ -172,7 +174,11 @@ private fun OverviewScreen(state: AppState) {
         if (top.isNotEmpty()) {
             item { SectionTitle("今日要闻") }
             items(top) { article ->
-                ArticleRow(article) { detail = article }
+                ArticleRow(
+                    article,
+                    onClick = { detail = article },
+                    onFav = { state.toggleArticleFavorite(article) }
+                )
             }
         }
     }
@@ -340,7 +346,11 @@ private fun NewsScreen(state: AppState) {
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(state.articles) { article ->
-                    ArticleRow(article) { detail = article }
+                    ArticleRow(
+                        article,
+                        onClick = { detail = article },
+                        onFav = { state.toggleArticleFavorite(article) }
+                    )
                 }
             }
         }
@@ -352,7 +362,11 @@ private fun NewsScreen(state: AppState) {
 }
 
 @Composable
-private fun ArticleRow(article: Article, onClick: () -> Unit = {}) {
+private fun ArticleRow(
+    article: Article,
+    onClick: () -> Unit = {},
+    onFav: () -> Unit = {}
+) {
     val isBloomberg = article.topics.split(",").contains(Repo.PSEUDO_BLOOMBERG)
     Card(Modifier.fillMaxWidth().clickable { onClick() }) {
         Column(Modifier.padding(12.dp)) {
@@ -393,6 +407,8 @@ private fun ArticleRow(article: Article, onClick: () -> Unit = {}) {
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.tertiary
                 )
+                Spacer(Modifier.width(6.dp))
+                FavStar(article.favorite, onFav)
             }
         }
     }
@@ -495,7 +511,9 @@ private fun AnnouncementScreen(state: AppState) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(state.announcements) { ann -> AnnouncementRow(ann) }
+                items(state.announcements) { ann ->
+                    AnnouncementRow(ann, onFav = { state.toggleAnnouncementFavorite(ann) })
+                }
             }
         }
     }
@@ -569,7 +587,7 @@ private fun CompanyPickerDialog(
 }
 
 @Composable
-private fun AnnouncementRow(ann: Announcement) {
+private fun AnnouncementRow(ann: Announcement, onFav: () -> Unit = {}) {
     val context = LocalContext.current
     Card(Modifier.fillMaxWidth().clickable { openUrl(context, ann.url) }) {
         Column(Modifier.padding(12.dp)) {
@@ -589,9 +607,19 @@ private fun AnnouncementRow(ann: Announcement) {
             }
             Spacer(Modifier.height(4.dp))
             Text(ann.title, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            if (ann.category.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(ann.category, fontSize = 10.sp, color = MaterialTheme.colorScheme.tertiary)
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (ann.category.isNotBlank()) {
+                    Text(
+                        ann.category,
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                FavStar(ann.favorite, onFav)
             }
         }
     }
@@ -599,36 +627,101 @@ private fun AnnouncementRow(ann: Announcement) {
 
 @Composable
 private fun ClearDialog(state: AppState, onDismiss: () -> Unit) {
+    var keepFav by remember { mutableStateOf(true) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("清理本地数据", fontSize = 16.sp) },
         text = {
-            Text(
-                "资讯和公告都存在手机本地，默认保留 ${Config.RETENTION_DAYS} 天，超期会自动清理。" +
-                    "也可以现在手动清理，腾出空间。",
-                fontSize = 13.sp,
-                lineHeight = 20.sp
-            )
+            Column {
+                Text(
+                    "资讯和公告都存在手机本地，默认保留 ${Config.RETENTION_DAYS} 天，超期会自动清理。" +
+                        "也可以现在手动清理，腾出空间。",
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { keepFav = !keepFav }
+                ) {
+                    Checkbox(checked = keepFav, onCheckedChange = { keepFav = it })
+                    Text("保留已收藏的内容", fontSize = 13.sp)
+                }
+            }
         },
         confirmButton = {
             Row {
-                TextButton(onClick = { state.clearOlderThan(7); onDismiss() }) {
+                TextButton(onClick = { state.clearOlderThan(7, keepFav); onDismiss() }) {
                     Text("清理7天前", fontSize = 13.sp)
                 }
-                TextButton(onClick = { state.clearOlderThan(30); onDismiss() }) {
+                TextButton(onClick = { state.clearOlderThan(30, keepFav); onDismiss() }) {
                     Text("清理30天前", fontSize = 13.sp)
                 }
             }
         },
         dismissButton = {
             Row {
-                TextButton(onClick = { state.clearAll(); onDismiss() }) {
+                TextButton(onClick = { state.clearAll(keepFav); onDismiss() }) {
                     Text("全部清空", fontSize = 13.sp)
                 }
                 TextButton(onClick = onDismiss) { Text("取消", fontSize = 13.sp) }
             }
         }
     )
+}
+
+// ------------------------------------------------------------------ 收藏
+
+@Composable
+private fun FavStar(favorite: Boolean, onToggle: () -> Unit) {
+    Text(
+        text = if (favorite) "★" else "☆",
+        fontSize = 18.sp,
+        color = if (favorite) Color(0xFFFFB300)
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .clickable { onToggle() }
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    )
+}
+
+@Composable
+private fun FavoritesScreen(state: AppState) {
+    var detail by remember { mutableStateOf<Article?>(null) }
+    val arts = state.favoriteArticles
+    val anns = state.favoriteAnnouncements
+
+    if (arts.isEmpty() && anns.isEmpty()) {
+        EmptyHint("还没有收藏。\n在「资讯」或「公告」里点条目右侧的 ☆ 就能收藏。")
+    } else {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (anns.isNotEmpty()) {
+                item { SectionTitle("收藏的公告 · ${anns.size}") }
+                items(anns) { ann ->
+                    AnnouncementRow(ann, onFav = { state.toggleAnnouncementFavorite(ann) })
+                }
+            }
+            if (arts.isNotEmpty()) {
+                item { SectionTitle("收藏的资讯 · ${arts.size}") }
+                items(arts) { article ->
+                    ArticleRow(
+                        article,
+                        onClick = { detail = article },
+                        onFav = { state.toggleArticleFavorite(article) }
+                    )
+                }
+            }
+        }
+    }
+
+    detail?.let { article ->
+        ArticleDetailDialog(article) { detail = null }
+    }
 }
 
 // ------------------------------------------------------------------ 通用
