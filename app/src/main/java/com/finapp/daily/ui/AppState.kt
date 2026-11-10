@@ -10,16 +10,12 @@ import com.finapp.daily.data.Announcement
 import com.finapp.daily.data.Article
 import com.finapp.daily.data.Config
 import com.finapp.daily.data.Indicator
-import com.finapp.daily.data.Repo
 import com.finapp.daily.data.RefreshResult
+import com.finapp.daily.data.Repo
 import java.util.concurrent.Executors
 
 /**
- * 简单的状态容器。不用 androidx.lifecycle.ViewModel —— 这个 App 只有一个界面状态，
- * 用 Compose 的 mutableStateOf 就够了，也少一个依赖。
- *
- * 刷新策略：打开 App 时，如果距上次刷新超过 [Config.AUTO_REFRESH_INTERVAL_MS]
- * 就自动抓一次；也可以手动下拉/点刷新。
+ * 界面状态容器。刷新在单线程池里跑，结果用 Handler 回投主线程。
  */
 class AppState(private val context: Context) {
 
@@ -43,7 +39,10 @@ class AppState(private val context: Context) {
     var statusText by mutableStateOf<String?>(null)
         private set
 
-    /** 资讯页的主题筛选，null / "全部" 表示不过滤 */
+    /** 失败明细，直接展示给用户，方便定位是哪个源不通 */
+    var errorDetail by mutableStateOf<String?>(null)
+        private set
+
     var topicFilter by mutableStateOf<String?>(null)
         private set
 
@@ -90,15 +89,16 @@ class AppState(private val context: Context) {
         }
     }
 
-    fun refresh(force: Boolean = true) {
+    fun refresh() {
         if (refreshing) return
         refreshing = true
         statusText = "正在更新…"
+        errorDetail = null
         executor.execute {
             val result: RefreshResult = try {
                 repo.refresh()
             } catch (e: Exception) {
-                RefreshResult(error = e.message ?: "未知错误")
+                RefreshResult(error = e.message ?: e.javaClass.simpleName)
             }
             val ind = repo.indicators()
             val art = repo.articles(topicFilter)
@@ -112,10 +112,13 @@ class AppState(private val context: Context) {
                 digest = dig
                 lastUpdated = upd
                 refreshing = false
+                errorDetail = result.error
                 statusText = when {
-                    result.isEmpty -> result.error ?: "没有取到数据"
-                    result.error != null -> "更新完成（部分失败：${result.error}）"
-                    else -> "更新完成：指标 ${result.indicatorCount} · 资讯 ${result.articleCount} · 公告 ${result.announcementCount}"
+                    result.isEmpty -> "没有取到任何数据"
+                    result.error != null ->
+                        "更新完成：指标 ${result.indicatorCount} · 资讯 ${result.articleCount} · 公告 ${result.announcementCount}（有失败项）"
+                    else ->
+                        "更新完成：指标 ${result.indicatorCount} · 资讯 ${result.articleCount} · 公告 ${result.announcementCount}"
                 }
             }
         }
