@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +52,7 @@ import androidx.compose.ui.unit.sp
 import com.finapp.daily.data.Announcement
 import com.finapp.daily.data.Article
 import com.finapp.daily.data.Indicator
-import com.finapp.daily.data.Keywords
+import com.finapp.daily.data.Repo
 
 private val Up = Color(0xFFD32F2F)
 private val Down = Color(0xFF2E7D32)
@@ -59,7 +60,7 @@ private val Down = Color(0xFF2E7D32)
 @Composable
 fun FinanceApp(state: AppState) {
     var tab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("概览", "彭博资讯", "公告")
+    val tabs = listOf("概览", "资讯", "公告")
 
     Scaffold { innerPadding ->
         Column(Modifier.padding(innerPadding).fillMaxSize()) {
@@ -149,7 +150,7 @@ private fun OverviewScreen(state: AppState) {
 
         val top = state.articles.take(5)
         if (top.isNotEmpty()) {
-            item { SectionTitle("今日彭博") }
+            item { SectionTitle("今日要闻") }
             items(top) { article -> ArticleRow(article) }
         }
     }
@@ -208,12 +209,10 @@ private fun IndicatorCard(ind: Indicator, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Badge(text: String, container: Color = Color.Unspecified) {
-    val bg = if (container == Color.Unspecified)
-        MaterialTheme.colorScheme.tertiaryContainer else container
+private fun Badge(text: String) {
     Box(
         Modifier
-            .background(bg, RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(4.dp))
             .padding(horizontal = 4.dp, vertical = 1.dp)
     ) {
         Text(text, fontSize = 9.sp, color = MaterialTheme.colorScheme.onTertiaryContainer)
@@ -235,15 +234,18 @@ private fun DigestCard(text: String) {
 
 @Composable
 private fun NewsScreen(state: AppState) {
-    val topics = listOf("全部", "美债", "美元", "加息", "原油")
+    val filters = listOf("全部", Repo.PSEUDO_BLOOMBERG, "美债", "美元", "加息", "原油")
     var detail by remember { mutableStateOf<Article?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            topics.forEach { topic ->
+            filters.forEach { topic ->
                 val selected = (state.topicFilter ?: "全部") == topic
                 FilterChip(
                     selected = selected,
@@ -254,9 +256,9 @@ private fun NewsScreen(state: AppState) {
         }
         if (state.articles.isEmpty()) {
             EmptyHint(
-                "近 3 天没有抓到彭博社相关内容。\n" +
-                    "彭博原文有付费墙抓不到，这里收的是中文站转载并标注「（彭博）」的部分，" +
-                    "某几天没有属正常。"
+                "近 3 天没有符合条件的资讯。\n" +
+                    "「全部」显示命中美债/美元/加息/原油的内容；" +
+                    "「彭博」只显示中文站转载并标注「（彭博）」的条目。"
             )
         } else {
             LazyColumn(
@@ -277,11 +279,12 @@ private fun NewsScreen(state: AppState) {
 
 @Composable
 private fun ArticleRow(article: Article, onClick: () -> Unit = {}) {
+    val isBloomberg = article.topics.split(",").contains(Repo.PSEUDO_BLOOMBERG)
     Card(Modifier.fillMaxWidth().clickable { onClick() }) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (Keywords.isBloomberg(article.title + " " + article.summary)) {
-                    Badge("彭博")
+                if (isBloomberg) {
+                    Badge(Repo.PSEUDO_BLOOMBERG)
                     Spacer(Modifier.width(6.dp))
                 }
                 Text(
@@ -322,7 +325,7 @@ private fun ArticleRow(article: Article, onClick: () -> Unit = {}) {
 }
 
 /**
- * 站内详情。见闻的快讯正文我们已经抓到了，直接在这里读，不用跳转、不用登录。
+ * 站内详情。见闻快讯正文我们本来就抓到了，直接在这里读，不跳转、不用登录。
  */
 @Composable
 private fun ArticleDetailDialog(article: Article, onDismiss: () -> Unit) {
@@ -345,9 +348,7 @@ private fun ArticleDetailDialog(article: Article, onDismiss: () -> Unit) {
                 Text(article.summary, fontSize = 13.sp, lineHeight = 21.sp)
             }
         },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("关闭") }
-        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
         dismissButton = {
             if (article.url.isNotBlank()) {
                 TextButton(onClick = {
