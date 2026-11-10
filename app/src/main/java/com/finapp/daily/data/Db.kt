@@ -263,8 +263,9 @@ class Db(context: Context) : SQLiteOpenHelper(context.applicationContext, NAME, 
         return out
     }
 
-    fun updateArticleTopics(url: String, topics: String, score: Int) {
+    fun updateArticleDerived(url: String, title: String, topics: String, score: Int) {
         val v = ContentValues().apply {
+            put("title", title)
             put("topics", topics)
             put("score", score)
         }
