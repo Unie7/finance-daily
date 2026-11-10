@@ -135,9 +135,23 @@ class Repo(context: Context) {
 
     fun lastUpdatedMillis(): Long = db.lastUpdatedAt()
 
-    fun clearOlderThan(days: Int): Int = db.clearOlderThan(days)
+    fun clearOlderThan(days: Int, keepFavorites: Boolean = true): Int =
+        db.clearOlderThan(days, keepFavorites)
 
-    fun clearAllContent(): Int = db.clearAllContent()
+    fun clearAllContent(keepFavorites: Boolean = true): Int =
+        db.clearAllContent(keepFavorites)
+
+    // ---------------- 收藏 ----------------
+    fun setArticleFavorite(url: String, favorite: Boolean) = db.setArticleFavorite(url, favorite)
+
+    fun setAnnouncementFavorite(url: String, favorite: Boolean) =
+        db.setAnnouncementFavorite(url, favorite)
+
+    fun favoriteArticles(): List<Article> = db.loadFavoriteArticles()
+
+    fun favoriteAnnouncements(): List<Announcement> = db.loadFavoriteAnnouncements()
+
+    fun favoriteCounts(): Pair<Int, Int> = db.favoriteCounts()
 
     fun lastUpdated(): String? {
         val ts = db.lastUpdatedAt()
