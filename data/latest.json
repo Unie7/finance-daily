@@ -1,30 +1,30 @@
 {
   "errors": {},
-  "generated_at": "2026-11-17T21:42:11Z",
+  "generated_at": "2026-11-18T21:43:04Z",
   "indicators": {
     "BRENT": {
-      "as_of": "2026-11-17",
-      "change": 0.46,
+      "as_of": "2026-11-18",
+      "change": -1.44,
       "title": "布伦特原油",
       "unit": "美元/桶",
-      "value": 92.9
+      "value": 91.7
     },
     "DXY": {
-      "as_of": "2026-11-17",
-      "change": null,
+      "as_of": "2026-11-18",
+      "change": 0.324,
       "title": "美元指数",
       "unit": "",
-      "value": 103.47
+      "value": 103.73
     },
     "EFFR": {
-      "as_of": "2026-11-16",
+      "as_of": "2026-11-17",
       "change": null,
       "title": "有效联邦基金利率",
       "unit": "%",
       "value": 3.88
     },
     "FED_TARGET": {
-      "as_of": "2026-11-16",
+      "as_of": "2026-11-17",
       "change": null,
       "high": 4.0,
       "low": 3.75,
@@ -33,46 +33,46 @@
       "value": "3.75-4.00"
     },
     "US10Y": {
-      "as_of": "2026-11-17",
-      "change": -0.02,
+      "as_of": "2026-11-18",
+      "change": -0.03,
       "title": "美债10年期",
       "unit": "%",
-      "value": 5.1
+      "value": 5.07
     },
     "US2Y": {
-      "as_of": "2026-11-17",
-      "change": -0.03,
+      "as_of": "2026-11-18",
+      "change": 0.0,
       "title": "美债2年期",
       "unit": "%",
       "value": 4.8
     },
     "US30Y": {
-      "as_of": "2026-11-17",
-      "change": 0.0,
+      "as_of": "2026-11-18",
+      "change": -0.05,
       "title": "美债30年期",
       "unit": "%",
-      "value": 5.46
+      "value": 5.41
     },
     "US3M": {
-      "as_of": "2026-11-17",
-      "change": -0.01,
+      "as_of": "2026-11-18",
+      "change": 0.01,
       "title": "美债3月期",
       "unit": "%",
-      "value": 4.33
+      "value": 4.34
     },
     "US5Y": {
-      "as_of": "2026-11-17",
-      "change": -0.03,
+      "as_of": "2026-11-18",
+      "change": -0.01,
       "title": "美债5年期",
       "unit": "%",
-      "value": 4.9
+      "value": 4.89
     },
     "WTI": {
-      "as_of": "2026-11-17",
-      "change": -0.15,
+      "as_of": "2026-11-18",
+      "change": -2.93,
       "title": "WTI原油",
       "unit": "美元/桶",
-      "value": 85.57
+      "value": 83.08
     }
   },
   "sources": {
