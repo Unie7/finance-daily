@@ -1,20 +1,20 @@
 {
   "errors": {},
-  "generated_at": "2026-11-20T21:37:49Z",
+  "generated_at": "2026-11-21T21:29:20Z",
   "indicators": {
     "BRENT": {
-      "as_of": "2026-11-20",
-      "change": 0.66,
+      "as_of": "2026-11-21",
+      "change": null,
       "title": "布伦特原油",
       "unit": "美元/桶",
-      "value": 92.64
+      "value": 92.57
     },
     "DXY": {
-      "as_of": "2026-11-20",
-      "change": -0.014,
+      "as_of": "2026-11-21",
+      "change": -0.054,
       "title": "美元指数",
       "unit": "",
-      "value": 103.825
+      "value": 103.785
     },
     "EFFR": {
       "as_of": "2026-11-19",
@@ -68,11 +68,11 @@
       "value": 4.71
     },
     "WTI": {
-      "as_of": "2026-11-20",
-      "change": 0.88,
+      "as_of": "2026-11-21",
+      "change": 1.18,
       "title": "WTI原油",
       "unit": "美元/桶",
-      "value": 84.09
+      "value": 83.62
     }
   },
   "sources": {
