@@ -1,6 +1,6 @@
 {
   "errors": {},
-  "generated_at": "2026-11-21T21:29:20Z",
+  "generated_at": "2026-11-22T21:33:16Z",
   "indicators": {
     "BRENT": {
       "as_of": "2026-11-21",
@@ -69,10 +69,10 @@
     },
     "WTI": {
       "as_of": "2026-11-21",
-      "change": 1.18,
+      "change": null,
       "title": "WTI原油",
       "unit": "美元/桶",
-      "value": 83.62
+      "value": 83.41
     }
   },
   "sources": {
